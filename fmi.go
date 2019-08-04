@@ -50,8 +50,11 @@ func Weather(place string) string {
 	snow_aws	Snow depth			cm
 	p_sea		Pressure (msl)		hPa
 	vis			Visibility			m
+	n_man		Cloud cover			1/8
+	wawa		Present weather?	?
+
 	*/
-	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws"}
+	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man"}
 	q.Set("parameters", strings.Join(measures, ","))
 
 	// There should be data every 10 mins
@@ -95,7 +98,8 @@ func Weather(place string) string {
 
 	var output strings.Builder
 	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
-	fmt.Fprintf(&output, "lämpötila %.1f°C", latestObservations["t2m"].Value)
+	fmt.Fprint(&output, cloudCover(latestObservations["n_man"].Value))
+	fmt.Fprintf(&output, ", lämpötila %.1f°C", latestObservations["t2m"].Value)
 	if !math.IsNaN(latestObservations["ws_10min"].Value) {
 		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(latestObservations["ws_10min"].Value, latestObservations["wd_10min"].Value), latestObservations["ws_10min"].Value, latestObservations["wg_10min"].Value)
 	}
@@ -150,6 +154,24 @@ func windDirection(d float64) string {
 		return "lounais"
 	case d >= 337.5 && d <= 360:
 		return "pohjois"
+	}
+	return ""
+}
+
+func cloudCover(d float64) string {
+	switch {
+	case d <= 1:
+		return "selkeää"
+	case d <= 3:
+		return "melko selkeää"
+	case d <= 5:
+		return "puolipilvistä"
+	case d <= 7:
+		return "melko pilvistä"
+	case d <= 8:
+		return "pilvistä"
+	case d == 9:
+		return "taivas ei näy"
 	}
 	return ""
 }
