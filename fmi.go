@@ -52,7 +52,6 @@ func Weather(place string) string {
 	vis			Visibility			m
 	n_man		Cloud cover			1/8
 	wawa		Present weather?	?
-
 	*/
 	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man"}
 	q.Set("parameters", strings.Join(measures, ","))
@@ -68,11 +67,13 @@ func Weather(place string) string {
 	resp, err := http.Get(endpoint.String())
 	if err != nil {
 		// handle error
+		return "Säähavaintoja ei saatu haettua"
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		// handle error?
+		return "Virhe luettaessa havaintoja"
 	}
 
 	var collection featureCollection
