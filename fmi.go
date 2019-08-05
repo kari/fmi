@@ -1,4 +1,4 @@
-package main
+package fmi
 
 import (
 	"encoding/xml"
@@ -99,8 +99,10 @@ func Weather(place string) string {
 
 	var output strings.Builder
 	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
-	fmt.Fprint(&output, cloudCover(latestObservations["n_man"].Value))
-	fmt.Fprintf(&output, ", lämpötila %.1f°C", latestObservations["t2m"].Value)
+	fmt.Fprintf(&output, "lämpötila %.1f°C", latestObservations["t2m"].Value)
+	if !math.IsNaN(latestObservations["n_man"].Value) {
+		fmt.Fprintf(&output, ", %s", cloudCover(latestObservations["n_man"].Value))
+	}
 	if !math.IsNaN(latestObservations["ws_10min"].Value) {
 		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(latestObservations["ws_10min"].Value, latestObservations["wd_10min"].Value), latestObservations["ws_10min"].Value, latestObservations["wg_10min"].Value)
 	}
@@ -115,6 +117,7 @@ func Weather(place string) string {
 	return output.String()
 }
 
+// https://ilmatieteenlaitos.fi/tuulet
 func windSpeed(s float64, d float64) string {
 	switch {
 	case s < 1:
@@ -135,6 +138,7 @@ func windSpeed(s float64, d float64) string {
 	return "tuulen nopeus"
 }
 
+// https://ilmatieteenlaitos.fi/tuulet
 func windDirection(d float64) string {
 	switch {
 	case d >= 0 && d <= 22.5:
@@ -159,6 +163,7 @@ func windDirection(d float64) string {
 	return ""
 }
 
+// https://ilmatieteenlaitos.fi/pilvisyys
 func cloudCover(d float64) string {
 	switch {
 	case d <= 1:
@@ -175,8 +180,4 @@ func cloudCover(d float64) string {
 		return "taivas ei näy"
 	}
 	return ""
-}
-
-func main() {
-	fmt.Println(Weather("helsinki"))
 }

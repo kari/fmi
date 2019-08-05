@@ -1,7 +1,11 @@
-package main
+package fmi
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestWeather(t *testing.T) {
-	Weather("helsinki")
+	Weather("Helsinki")
+	fmt.Printf(Weather("lappi"))
 }
