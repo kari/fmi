@@ -1,4 +1,5 @@
 # FMI
+
 ![Go report](https://goreportcard.com/badge/github.com/kari/fmi)
 
 Tämä Go-kirjasto hakee Ilmatieteen laitoksen rajapintojen kautta viimeisimmät säähavainnot halutulle paikalle. Hyödyllinen esimerkiksi IRC-bottia varten.

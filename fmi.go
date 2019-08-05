@@ -156,7 +156,7 @@ func windDirection(d float64) string {
 	case d <= 292.5:
 		return "länsi"
 	case d < 337.5:
-		return "lounais"
+		return "luoteis"
 	case d >= 337.5 && d <= 360:
 		return "pohjois"
 	}
@@ -166,7 +166,7 @@ func windDirection(d float64) string {
 // https://ilmatieteenlaitos.fi/pilvisyys
 func cloudCover(d float64) string {
 	switch {
-	case d <= 1:
+	case d >= 0 && d <= 1:
 		return "selkeää"
 	case d <= 3:
 		return "melko selkeää"
