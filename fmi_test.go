@@ -15,6 +15,10 @@ func TestWeather(t *testing.T) {
 	if s2 != "Säähavaintoja ei löytynyt" {
 		t.Errorf("Weather('Narnia') should return 'Säähavaintoja ei löytynyt', instead got '%s'", s2)
 	}
+	s3 := Weather("")
+	if s3 != "Paikkaa ei syötetty" {
+		t.Errorf("Weather('') should return 'Paikkaa ei syötetty', instead got '%s'", s3)
+	}
 }
 
 func TestHumidex(t *testing.T) {

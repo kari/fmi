@@ -27,6 +27,10 @@ type observation struct {
 // Weather returns current weather for a place as a written description
 func Weather(place string) string {
 
+	if place == "" {
+		return "Paikkaa ei syötetty"
+	}
+
 	endpoint := url.URL{
 		Scheme:   "http",
 		Host:     "opendata.fmi.fi",
