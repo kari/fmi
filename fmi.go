@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-type featureCollection struct {
+type simpleFeatureCollection struct {
 	Timestamp time.Time     `xml:"timeStamp,attr"`
-	Results   int           `xml:"numberReturned,attr"`
-	Matches   int           `xml:"numberMatched,attr"`
+	Returned  int           `xml:"numberReturned,attr"`
+	Matched   int           `xml:"numberMatched,attr"`
 	Elements  []observation `xml:"member>BsWfsElement"`
 }
 
@@ -24,6 +24,72 @@ type observation struct {
 	Value     float64   `xml:"ParameterValue"`
 }
 
+func getFeature(query string, parameters url.Values) (*http.Response, error) {
+	endpoint := url.URL{
+		Scheme:   "http",
+		Host:     "opendata.fmi.fi",
+		Path:     "/wfs",
+		RawQuery: "service=WFS&version=2.0.0&request=getFeature",
+	}
+
+	q := endpoint.Query()
+	q.Set("storedquery_id", query)
+
+	for k, vs := range parameters {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+
+	endpoint.RawQuery = q.Encode()
+
+	return http.Get(endpoint.String())
+}
+
+func formatObservations(place string, observations map[string]observation) string {
+	var output strings.Builder
+
+	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
+	if !math.IsNaN(observations["t2m"].Value) {
+		fmt.Fprintf(&output, "lämpötila %.1f°C", observations["t2m"].Value)
+		switch {
+		case observations["t2m"].Value > 20 && !math.IsNaN(observations["td"].Value):
+			h := humidex(observations["t2m"].Value, observations["td"].Value)
+			if humidexScale(h) != "" {
+				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
+			} else {
+				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", h)
+			}
+		case observations["t2m"].Value <= 10 && !math.IsNaN(observations["ws_10min"].Value):
+			wc := windChill(observations["t2m"].Value, observations["ws_10min"].Value)
+			if windChillScale(wc) != "" {
+				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
+			} else {
+				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", wc)
+			}
+		}
+	} else {
+		fmt.Fprint(&output, "lämpötilatiedot puuttuvat")
+	}
+	if !math.IsNaN(observations["n_man"].Value) {
+		fmt.Fprintf(&output, ", %s", cloudCover(observations["n_man"].Value))
+	}
+	if !math.IsNaN(observations["ws_10min"].Value) {
+		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"].Value, observations["wd_10min"].Value), observations["ws_10min"].Value, observations["wg_10min"].Value)
+	}
+	if !math.IsNaN(observations["rh"].Value) {
+		fmt.Fprintf(&output, ", ilmankosteus %.f%%", observations["rh"].Value)
+	}
+	if !math.IsNaN(observations["r_1h"].Value) && observations["r_1h"].Value >= 0 {
+		fmt.Fprintf(&output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"].Value, observations["ri_10min"].Value)
+	}
+	if !math.IsNaN(observations["snow_aws"].Value) && observations["snow_aws"].Value >= 0 {
+		fmt.Fprintf(&output, ", lumen syvyys %.f cm", observations["snow_aws"].Value)
+	}
+
+	return output.String()
+}
+
 // Weather returns current weather for a place as a written description
 func Weather(place string) string {
 
@@ -31,16 +97,13 @@ func Weather(place string) string {
 		return "Paikkaa ei syötetty"
 	}
 
-	endpoint := url.URL{
-		Scheme:   "http",
-		Host:     "opendata.fmi.fi",
-		Path:     "/wfs",
-		RawQuery: "service=WFS&version=2.0.0&request=getFeature&storedquery_id=fmi::observations::weather::simple",
-	}
+	return simpleObservations(place)
+}
 
-	q := endpoint.Query()
+func simpleObservations(place string) string {
+	q := url.Values{}
 	q.Set("place", place)
-	// q.Set("maxlocations", "1")
+	q.Set("maxlocations", "1")
 
 	/* Parameters:
 	   name		    label				measure
@@ -68,9 +131,7 @@ func Weather(place string) string {
 	q.Set("starttime", startTime.Format(time.RFC3339))
 	q.Set("endtime", endTime.Format(time.RFC3339))
 
-	endpoint.RawQuery = q.Encode()
-
-	resp, err := http.Get(endpoint.String())
+	resp, err := getFeature("fmi::observations::weather::simple", q)
 	if err != nil {
 		// handle error
 		return "Säähavaintoja ei saatu haettua"
@@ -87,10 +148,10 @@ func Weather(place string) string {
 		return "Säähavaintopaikkaa ei löytynyt"
 	}
 
-	var collection featureCollection
+	var collection simpleFeatureCollection
 	xml.Unmarshal(body, &collection)
 
-	if collection.Matches == 0 || collection.Results == 0 {
+	if collection.Matched == 0 || collection.Returned == 0 {
 		return "Säähavaintoja ei löytynyt"
 	}
 
@@ -108,46 +169,7 @@ func Weather(place string) string {
 		}
 	}
 
-	var output strings.Builder
-	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
-	if !math.IsNaN(latestObservations["t2m"].Value) {
-		fmt.Fprintf(&output, "lämpötila %.1f°C", latestObservations["t2m"].Value)
-		switch {
-		case latestObservations["t2m"].Value > 20 && !math.IsNaN(latestObservations["td"].Value):
-			h := humidex(latestObservations["t2m"].Value, latestObservations["td"].Value)
-			if humidexScale(h) != "" {
-				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
-			} else {
-				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", h)
-			}
-		case latestObservations["t2m"].Value <= 10 && !math.IsNaN(latestObservations["ws_10min"].Value):
-			wc := windChill(latestObservations["t2m"].Value, latestObservations["ws_10min"].Value)
-			if windChillScale(wc) != "" {
-				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
-			} else {
-				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", wc)
-			}
-		}
-	} else {
-		fmt.Fprint(&output, "lämpötilatiedot puuttuvat")
-	}
-	if !math.IsNaN(latestObservations["n_man"].Value) {
-		fmt.Fprintf(&output, ", %s", cloudCover(latestObservations["n_man"].Value))
-	}
-	if !math.IsNaN(latestObservations["ws_10min"].Value) {
-		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(latestObservations["ws_10min"].Value, latestObservations["wd_10min"].Value), latestObservations["ws_10min"].Value, latestObservations["wg_10min"].Value)
-	}
-	if !math.IsNaN(latestObservations["rh"].Value) {
-		fmt.Fprintf(&output, ", ilmankosteus %.f%%", latestObservations["rh"].Value)
-	}
-	if !math.IsNaN(latestObservations["r_1h"].Value) && latestObservations["r_1h"].Value >= 0 {
-		fmt.Fprintf(&output, ", sateen määrä %.1f mm (%.1f mm/h)", latestObservations["r_1h"].Value, latestObservations["ri_10min"].Value)
-	}
-	if !math.IsNaN(latestObservations["snow_aws"].Value) && latestObservations["snow_aws"].Value >= 0 {
-		fmt.Fprintf(&output, ", lumen syvyys %.f cm", latestObservations["snow_aws"].Value)
-	}
-
-	return output.String()
+	return formatObservations(place, latestObservations)
 }
 
 // windSpeed takes wind speed s (m/s) and direction d (angle) and
