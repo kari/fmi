@@ -18,10 +18,42 @@ type simpleFeatureCollection struct {
 	Elements  []observation `xml:"member>BsWfsElement"`
 }
 
+type multipointFeatureCollection struct {
+	Timestamp time.Time          `xml:"timeStamp,attr"`
+	Returned  int                `xml:"numberReturned,attr"`
+	Matched   int                `xml:"numberMatched,attr"`
+	Locations []location         `xml:"member>GridSeriesObservation>featureOfInterest>SF_SpatialSamplingFeature>sampledFeature>LocationCollection>member>Location"`
+	Points    []point            `xml:"member>GridSeriesObservation>featureOfInterest>SF_SpatialSamplingFeature>shape>MultiPoint>pointMember>Point"`
+	Result    multiPointCoverage `xml:"member>GridSeriesObservation>result>MultiPointCoverage"`
+}
+
+type multiPointCoverage struct {
+	Positions string `xml:"domainSet>SimpleMultiPoint>positions"`
+	Data      string `xml:"rangeSet>DataBlock>doubleOrNilReasonTupleList"`
+	Fields    []struct {
+		Name string `xml:"name,attr"`
+	} `xml:"rangeType>DataRecord>field"`
+}
+
 type observation struct {
 	Time      time.Time `xml:"Time"`
 	Parameter string    `xml:"ParameterName"`
 	Value     float64   `xml:"ParameterValue"`
+}
+
+type point struct {
+	ID   string `xml:"id,attr"`
+	Name string `xml:"name"`
+	Pos  string `xml:"pos"`
+}
+
+type location struct {
+	Identifier int `xml:"identifier"`
+	Names      []struct {
+		Name      string `xml:",chardata"`
+		Codespace string `xml:"codeSpace,attr"`
+	} `xml:"name"`
+	Region string `xml:"region"`
 }
 
 func getFeature(query string, parameters url.Values) (*http.Response, error) {
@@ -97,7 +129,69 @@ func Weather(place string) string {
 		return "Paikkaa ei syötetty"
 	}
 
-	return simpleObservations(place)
+	return multipointObservations(place)
+}
+
+func multipointObservations(place string) string {
+	q := url.Values{}
+	q.Set("place", place)
+	q.Set("maxlocations", "2")
+
+	/* Parameters:
+	   name		    label				measure
+	   t2m		    Air Temperature 	degC
+	   ws_10min	    Wind Speed			m/s
+	   wg_10min	    Gust Speed			m/s
+	   wd_10min	    Wind Direction		degrees
+	   rh		    Relative humidity	%
+	   td		    Dew-point temp.		degC
+	   r_1h		    Precipitation amt	mm
+	   ri_10min	    Precip. intensity	mm/h
+	   snow_aws	    Snow depth			cm
+	   p_sea	    Pressure (msl)		hPa
+	   vis		    Visibility			m
+	   n_man	    Cloud cover			1/8
+	   wawa		    Present weather?	?
+	*/
+	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td"}
+	q.Set("parameters", strings.Join(measures, ","))
+
+	// There should be data every 10 mins
+	q.Set("timestep", "10")
+	endTime := time.Now().UTC().Truncate(10 * time.Minute)
+	startTime := endTime.Add(-10 * time.Minute)
+	q.Set("starttime", startTime.Format(time.RFC3339))
+	q.Set("endtime", endTime.Format(time.RFC3339))
+
+	resp, err := getFeature("fmi::observations::weather::multipointcoverage", q)
+	if err != nil {
+		// handle error
+		return "Säähavaintoja ei saatu haettua"
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		// handle error?
+		return "Virhe luettaessa havaintoja"
+	}
+
+	if resp.StatusCode != 200 {
+		// If place parsing fails, returns 400 with OperationParsingFailed
+		return "Säähavaintopaikkaa ei löytynyt"
+	}
+
+	var collection multipointFeatureCollection
+	xml.Unmarshal(body, &collection)
+
+	if collection.Matched == 0 || collection.Returned == 0 {
+		return "Säähavaintoja ei löytynyt"
+	}
+
+	fmt.Println(collection)
+
+	latestObservations := make(map[string]observation)
+
+	return formatObservations(place, latestObservations)
 }
 
 func simpleObservations(place string) string {
