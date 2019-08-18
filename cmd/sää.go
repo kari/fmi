@@ -8,5 +8,7 @@ import (
 )
 
 func main() {
-	fmt.Println(fmi.Weather(os.Args[1]))
+	if len(os.Args) > 1 {
+		fmt.Println(fmi.Weather(os.Args[1]))
+	}
 }

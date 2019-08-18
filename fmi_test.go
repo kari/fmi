@@ -19,6 +19,15 @@ func TestWeather(t *testing.T) {
 	if s3 != "Paikkaa ei syötetty" {
 		t.Errorf("Weather('') should return 'Paikkaa ei syötetty', instead got '%s'", s3)
 	}
+	s4 := Weather("ajfhjasdf")
+	if s4 != "Säähavaintopaikkaa ei löytynyt" {
+		t.Errorf("Weather('ajfhjasdf') should return 'Säähavaintopaikkaa ei löytynyt', instead got '%s'", s4)
+	}
+	s5 := Weather("Pihtipudas")
+	if !strings.Contains(s5, "Pihtipudas") {
+		t.Errorf("Weather('Pihtipudas') should contain 'Pihtipudas', instead got '%s'", s5)
+	}
+
 }
 
 func TestHumidex(t *testing.T) {

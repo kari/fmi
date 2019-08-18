@@ -40,6 +40,7 @@ func Weather(place string) string {
 
 	q := endpoint.Query()
 	q.Set("place", place)
+	// q.Set("maxlocations", "1")
 
 	/* Parameters:
 	   name		    label				measure
@@ -61,6 +62,7 @@ func Weather(place string) string {
 	q.Set("parameters", strings.Join(measures, ","))
 
 	// There should be data every 10 mins
+	q.Set("timestep", "10")
 	endTime := time.Now().UTC().Truncate(10 * time.Minute)
 	startTime := endTime.Add(-10 * time.Minute)
 	q.Set("starttime", startTime.Format(time.RFC3339))
@@ -78,6 +80,11 @@ func Weather(place string) string {
 	if err != nil {
 		// handle error?
 		return "Virhe luettaessa havaintoja"
+	}
+
+	if resp.StatusCode != 200 {
+		// If place parsing fails, returns 400 with OperationParsingFailed
+		return "Säähavaintopaikkaa ei löytynyt"
 	}
 
 	var collection featureCollection
