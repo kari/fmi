@@ -23,7 +23,7 @@ Katso examples/ -kansiosta lisää esimerkkejä.
 
 ## Lähteet
 
-* [Ilmatieteen laitoksen latauspalveun pikaohje](https://ilmatieteenlaitos.fi/latauspalvelun-pikaohje)
+* [Ilmatieteen laitoksen latauspalvelun pikaohje](https://ilmatieteenlaitos.fi/latauspalvelun-pikaohje)
 * [BCIRC/py/fmi.py](https://github.com/Jonuz/BCIRC/blob/master/py/fmi.py)
 
 ## Contributing
