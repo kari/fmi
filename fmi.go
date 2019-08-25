@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -19,6 +20,7 @@ type simpleFeatureCollection struct {
 }
 
 type observation struct {
+	Location  string    `xml:"Location>Point>pos"`
 	Time      time.Time `xml:"Time"`
 	Parameter string    `xml:"ParameterName"`
 	Value     float64   `xml:"ParameterValue"`
@@ -46,22 +48,22 @@ func getFeature(query string, parameters url.Values) (*http.Response, error) {
 	return http.Get(endpoint.String())
 }
 
-func formatObservations(place string, observations map[string]observation) string {
+func formatObservations(place string, observations map[string]float64) string {
 	var output strings.Builder
 
 	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
-	if !math.IsNaN(observations["t2m"].Value) {
-		fmt.Fprintf(&output, "lämpötila %.1f°C", observations["t2m"].Value)
+	if !math.IsNaN(observations["t2m"]) {
+		fmt.Fprintf(&output, "lämpötila %.1f°C", observations["t2m"])
 		switch {
-		case observations["t2m"].Value > 20 && !math.IsNaN(observations["td"].Value):
-			h := humidex(observations["t2m"].Value, observations["td"].Value)
+		case observations["t2m"] > 20 && !math.IsNaN(observations["td"]):
+			h := humidex(observations["t2m"], observations["td"])
 			if humidexScale(h) != "" {
 				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
 			} else {
 				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", h)
 			}
-		case observations["t2m"].Value <= 10 && !math.IsNaN(observations["ws_10min"].Value):
-			wc := windChill(observations["t2m"].Value, observations["ws_10min"].Value)
+		case observations["t2m"] <= 10 && !math.IsNaN(observations["ws_10min"]):
+			wc := windChill(observations["t2m"], observations["ws_10min"])
 			if windChillScale(wc) != "" {
 				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
 			} else {
@@ -71,20 +73,20 @@ func formatObservations(place string, observations map[string]observation) strin
 	} else {
 		fmt.Fprint(&output, "lämpötilatiedot puuttuvat")
 	}
-	if !math.IsNaN(observations["n_man"].Value) {
-		fmt.Fprintf(&output, ", %s", cloudCover(observations["n_man"].Value))
+	if !math.IsNaN(observations["n_man"]) {
+		fmt.Fprintf(&output, ", %s", cloudCover(observations["n_man"]))
 	}
-	if !math.IsNaN(observations["ws_10min"].Value) {
-		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"].Value, observations["wd_10min"].Value), observations["ws_10min"].Value, observations["wg_10min"].Value)
+	if !math.IsNaN(observations["ws_10min"]) {
+		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"], observations["wd_10min"]), observations["ws_10min"], observations["wg_10min"])
 	}
-	if !math.IsNaN(observations["rh"].Value) {
-		fmt.Fprintf(&output, ", ilmankosteus %.f%%", observations["rh"].Value)
+	if !math.IsNaN(observations["rh"]) {
+		fmt.Fprintf(&output, ", ilmankosteus %.f%%", observations["rh"])
 	}
-	if !math.IsNaN(observations["r_1h"].Value) && observations["r_1h"].Value >= 0 {
-		fmt.Fprintf(&output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"].Value, observations["ri_10min"].Value)
+	if !math.IsNaN(observations["r_1h"]) && observations["r_1h"] >= 0 {
+		fmt.Fprintf(&output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"], observations["ri_10min"])
 	}
-	if !math.IsNaN(observations["snow_aws"].Value) && observations["snow_aws"].Value >= 0 {
-		fmt.Fprintf(&output, ", lumen syvyys %.f cm", observations["snow_aws"].Value)
+	if !math.IsNaN(observations["snow_aws"]) && observations["snow_aws"] >= 0 {
+		fmt.Fprintf(&output, ", lumen syvyys %.f cm", observations["snow_aws"])
 	}
 
 	return output.String()
@@ -100,10 +102,19 @@ func Weather(place string) string {
 	return simpleObservations(place)
 }
 
+func appendIfMssing(slice []string, s string) []string {
+	for _, el := range slice {
+		if el == s {
+			return slice
+		}
+	}
+	return append(slice, s)
+}
+
 func simpleObservations(place string) string {
 	q := url.Values{}
 	q.Set("place", place)
-	q.Set("maxlocations", "1")
+	q.Set("maxlocations", "2")
 
 	/* Parameters:
 	   name		    label				measure
@@ -157,19 +168,55 @@ func simpleObservations(place string) string {
 
 	// fmt.Println(collection)
 
-	latestObservations := make(map[string]observation)
+	observations := make(map[time.Time]map[string]map[string]float64)
+	times := make([]time.Time, 0)
+	locations := make([]string, 0)
 
 	for _, obs := range collection.Elements {
-		v, ok := latestObservations[obs.Parameter]
-		if !ok || v.Time.Before(obs.Time) {
-			latestObservations[obs.Parameter] = observation{
-				Time:  obs.Time,
-				Value: obs.Value,
+		if observations[obs.Time] == nil {
+			times = append(times, obs.Time)
+			observations[obs.Time] = make(map[string]map[string]float64)
+		}
+		if observations[obs.Time][obs.Location] == nil {
+			locations = appendIfMssing(locations, obs.Location)
+			observations[obs.Time][obs.Location] = make(map[string]float64)
+		}
+		observations[obs.Time][obs.Location][obs.Parameter] = obs.Value
+	}
+
+	sort.Slice(times, func(i, j int) bool {
+		return times[i].After(times[j])
+	})
+
+	// fmt.Println(observations)
+	// fmt.Println(times)
+	// fmt.Println(locations)
+
+	latestObs := make(map[string]float64)
+	for _, timeIndex := range times {
+		for _, locationIndex := range locations {
+			if countNanMeasures(observations[timeIndex][locationIndex], measures) != len(measures) {
+				latestObs = observations[timeIndex][locationIndex]
+				// fmt.Printf("%s %s", timeIndex, locationIndex)
+				// fmt.Println(observations[timeIndex][locationIndex])
 			}
 		}
 	}
+	if len(latestObs) == 0 {
+		return "Säähavaintoja ei löytynyt"
+	}
 
-	return formatObservations(place, latestObservations)
+	return formatObservations(place, latestObs)
+}
+
+func countNanMeasures(obs map[string]float64, measures []string) int {
+	count := 0
+	for _, measure := range measures {
+		if math.IsNaN(obs[measure]) {
+			count++
+		}
+	}
+	return count
 }
 
 // windSpeed takes wind speed s (m/s) and direction d (angle) and
