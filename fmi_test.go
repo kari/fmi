@@ -180,3 +180,31 @@ func TestWindSpeed(t *testing.T) {
 		}
 	}
 }
+
+func TestWindChillFmi(t *testing.T) {
+	got := windChillFmi(-10.0, 0)
+	if got != -10.0 {
+		t.Errorf("Wind chill should equal temperature when wind speed is zero, got %.2f", got)
+	}
+	got = windChillFmi(-10.0, 1)
+	if got >= -10.0 {
+		t.Errorf("Wind chill should be less than temperature when wind speed is below 5 km/h (1.4 m/s), got %.2f", got)
+	}
+	got = windChillFmi(-10.0, 2)
+	if got >= -10.0 {
+		t.Errorf("Wind chill should be less than temperature when wind speed is above 5 km/h (1.4 m/s), got %.2f", got)
+	}
+	// TODO: Add test cases
+}
+
+func TestSummerSimmer(t *testing.T) {
+	got := SummerSimmer(14, 0)
+	if got != 14 {
+		t.Errorf("SummerSimmer should return temperature if below limit")
+	}
+	// TODO: Add test cases
+}
+
+func TestFeelsLikeTemperature(t *testing.T) {
+	// TODO: Add test cases
+}
