@@ -116,22 +116,23 @@ func simpleObservations(place string) string {
 	q.Set("place", place)
 	q.Set("maxlocations", "2")
 
-	/* Parameters:
-		   name		    label				measure
-		   t2m		    Air Temperature 	degC
-		   ws_10min	    Wind Speed			m/s
-		   wg_10min	    Gust Speed			m/s
-		   wd_10min	    Wind Direction		degrees
-		   rh		    Relative humidity	%
-		   td		    Dew-point temp.		degC
-		   r_1h		    Precipitation amt	mm
-		   ri_10min	    Precip. intensity	mm/h
-		   snow_aws	    Snow depth			cm
-		   p_sea	    Pressure (msl)		hPa
-		   vis		    Visibility			m
-		   n_man	    Cloud cover			1/8
-	       wawa		    Present weather 	code (00-99)
-	                                        see: https://www.wmo.int/pages/prog/www/WMOCodes/WMO306_vI1/Publications/2017update/Sel9.pdf
+	/*  Parameters:
+	    name        label               measure
+	    t2m         Air Temperature     degC
+	    ws_10min    Wind Speed          m/s
+	    wg_10min    Gust Speed          m/s
+	    wd_10min    Wind Direction      degrees
+	    rh          Relative humidity   %
+	    td          Dew-point temp.     degC
+	    r_1h        Precipitation amt   mm
+	    ri_10min    Precip. intensity   mm/h
+	    snow_aws    Snow depth          cm
+	                -1 = no snow, 0 = snow in vicinity
+	    p_sea       Pressure (msl)      hPa
+	    vis         Visibility          m
+	    n_man       Cloud cover         1/8
+	    wawa        Present weather     code (00-99)
+	                see: https://www.wmo.int/pages/prog/www/WMOCodes/WMO306_vI1/Publications/2017update/Sel9.pdf
 	*/
 	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td"}
 	q.Set("parameters", strings.Join(measures, ","))
