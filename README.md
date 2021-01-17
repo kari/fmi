@@ -35,3 +35,5 @@ Please make sure to update tests as appropriate.
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
+
+Open data from FMI used under [Creative Commons Attribution 4.0 International license](https://en.ilmatieteenlaitos.fi/open-data-licence)
