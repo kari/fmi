@@ -1,3 +1,5 @@
 module github.com/kari/fmi
 
-go 1.15
+go 1.24
+
+require golang.org/x/text v0.27.0

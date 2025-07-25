@@ -1,17 +1,26 @@
+// Package fmi fetches latest weather observations for a given place
+// using FMI's open AI
 package fmi
 
 import (
+	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
+// simpleFeatureCollection is a struct in returned XML
 type simpleFeatureCollection struct {
 	Timestamp time.Time     `xml:"timeStamp,attr"`
 	Returned  int           `xml:"numberReturned,attr"`
@@ -19,6 +28,7 @@ type simpleFeatureCollection struct {
 	Elements  []observation `xml:"member>BsWfsElement"`
 }
 
+// observation is a struct in returned XML
 type observation struct {
 	Location  string    `xml:"Location>Point>pos"`
 	Time      time.Time `xml:"Time"`
@@ -26,6 +36,26 @@ type observation struct {
 	Value     float64   `xml:"ParameterValue"`
 }
 
+// observations holds observations for a place as a map
+type observations map[string]float64
+
+// Weather returns current weather for a place as a written description
+// or a string representation of the error
+func Weather(place string) string {
+
+	if place == "" {
+		return "Paikkaa ei syötetty"
+	}
+
+	weather, err := simpleObservations(place)
+	if err != nil {
+		return err.Error()
+	}
+	return weather
+}
+
+// getFeature does a HTTP GET request against FMI's API to fetch data
+// for a stored query with parameters and returns
 func getFeature(query string, parameters url.Values) (*http.Response, error) {
 	endpoint := url.URL{
 		Scheme:   "http",
@@ -45,77 +75,151 @@ func getFeature(query string, parameters url.Values) (*http.Response, error) {
 
 	endpoint.RawQuery = q.Encode()
 
-	return http.Get(endpoint.String())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	return http.DefaultClient.Do(req)
 }
 
-func formatObservations(place string, observations map[string]float64) string {
-	var output strings.Builder
-
-	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", strings.Title(strings.ToLower(place)))
+func formatTemperature(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["t2m"]) {
-		fmt.Fprintf(&output, "lämpötila %.1f°C", observations["t2m"])
+		fmt.Fprintf(output, "lämpötila %.1f°C", observations["t2m"])
 		switch {
 		case observations["t2m"] > 20 && !math.IsNaN(observations["td"]):
 			h := humidex(observations["t2m"], observations["td"])
 			if humidexScale(h) != "" {
-				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
+				fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
 			} else {
-				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", h)
+				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", h)
 			}
 		case observations["t2m"] <= 10 && !math.IsNaN(observations["ws_10min"]):
 			wc := windChillFmi(observations["t2m"], observations["ws_10min"])
 			if windChillScale(wc) != "" {
-				fmt.Fprintf(&output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
+				fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
 			} else {
-				fmt.Fprintf(&output, " (tuntuu kuin %.1f°C)", wc)
+				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", wc)
 			}
 		}
 	} else {
-		fmt.Fprint(&output, "lämpötilatiedot puuttuvat")
+		fmt.Fprint(output, "lämpötilatiedot puuttuvat")
 	}
+
+}
+
+func formatCloudCover(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["n_man"]) {
-		fmt.Fprintf(&output, ", %s", cloudCover(observations["n_man"]))
+		fmt.Fprintf(output, ", %s", cloudCover(observations["n_man"]))
 	}
+}
+
+func formatWindSpeed(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["ws_10min"]) {
-		fmt.Fprintf(&output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"], observations["wd_10min"]), observations["ws_10min"], observations["wg_10min"])
+		fmt.Fprintf(output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"], observations["wd_10min"]), observations["ws_10min"], observations["wg_10min"])
 	}
+}
+
+func formatHumidity(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["rh"]) {
-		fmt.Fprintf(&output, ", ilmankosteus %.f%%", observations["rh"])
+		fmt.Fprintf(output, ", ilmankosteus %.f%%", observations["rh"])
 	}
+}
+
+func formatRain(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["r_1h"]) && observations["r_1h"] >= 0 {
-		fmt.Fprintf(&output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"], observations["ri_10min"])
+		fmt.Fprintf(output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"], observations["ri_10min"])
 	}
+}
+
+func formatSnow(output *strings.Builder, observations observations) {
 	if !math.IsNaN(observations["snow_aws"]) && observations["snow_aws"] >= 0 {
-		fmt.Fprintf(&output, ", lumen syvyys %.f cm", observations["snow_aws"])
+		fmt.Fprintf(output, ", lumen syvyys %.f cm", observations["snow_aws"])
 	}
+}
+
+// formatObservations returns a string representation of weather observations
+// at a place
+func formatObservations(place string, observations observations) string {
+	var output strings.Builder
+
+	c := cases.Title(language.Finnish)
+
+	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", c.String(strings.ToLower(place)))
+	formatTemperature(&output, observations)
+	formatCloudCover(&output, observations)
+	formatWindSpeed(&output, observations)
+	formatHumidity(&output, observations)
+	formatRain(&output, observations)
+	formatSnow(&output, observations)
 
 	return output.String()
 }
 
-// Weather returns current weather for a place as a written description
-func Weather(place string) string {
-
-	if place == "" {
-		return "Paikkaa ei syötetty"
-	}
-
-	return simpleObservations(place)
-}
-
-func appendIfMssing(slice []string, s string) []string {
-	for _, el := range slice {
-		if el == s {
-			return slice
-		}
-	}
-	return append(slice, s)
-}
-
-func simpleObservations(place string) string {
+func buildObservationQuery(place string, measures []string) url.Values {
 	q := url.Values{}
 	q.Set("place", place)
 	q.Set("maxlocations", "2")
 
+	q.Set("parameters", strings.Join(measures, ","))
+
+	// There should be data every 10 mins
+	q.Set("timestep", "10")
+	endTime := time.Now().UTC().Truncate(10 * time.Minute)
+	startTime := endTime.Add(-10 * time.Minute)
+	q.Set("starttime", startTime.Format(time.RFC3339))
+	q.Set("endtime", endTime.Format(time.RFC3339))
+
+	return q
+}
+
+func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {
+	var collection simpleFeatureCollection
+
+	if err := xml.Unmarshal(data, &collection); err != nil {
+		return simpleFeatureCollection{}, errors.New("virhe parsittaessa havaintoja")
+	}
+
+	return collection, nil
+}
+
+func extractLatestObservations(collection simpleFeatureCollection, measures []string) observations {
+	observations := make(map[time.Time]map[string]map[string]float64)
+	times := make([]time.Time, 0)
+	locations := make([]string, 0)
+
+	for _, obs := range collection.Elements {
+		if observations[obs.Time] == nil {
+			times = append(times, obs.Time)
+			observations[obs.Time] = make(map[string]map[string]float64)
+		}
+		if observations[obs.Time][obs.Location] == nil {
+			if !slices.Contains(locations, obs.Location) {
+				locations = append(locations, obs.Location)
+			}
+			observations[obs.Time][obs.Location] = make(map[string]float64)
+		}
+		observations[obs.Time][obs.Location][obs.Parameter] = obs.Value
+	}
+
+	sort.Slice(times, func(i, j int) bool {
+		return times[i].After(times[j])
+	})
+
+	latestObs := make(map[string]float64)
+	for _, timeIndex := range times {
+		for _, locationIndex := range locations {
+			if countNanMeasures(observations[timeIndex][locationIndex], measures) != len(measures) {
+				latestObs = observations[timeIndex][locationIndex]
+			}
+		}
+	}
+
+	return latestObs
+}
+
+func simpleObservations(place string) (string, error) {
 	/*  Parameters:
 	name		label				measure
 	t2m			Air Temperature		degC
@@ -135,75 +239,37 @@ func simpleObservations(place string) string {
 				see: https://www.wmo.int/pages/prog/www/WMOCodes/WMO306_vI1/Publications/2017update/Sel9.pdf
 	*/
 	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td"}
-	q.Set("parameters", strings.Join(measures, ","))
-
-	// There should be data every 10 mins
-	q.Set("timestep", "10")
-	endTime := time.Now().UTC().Truncate(10 * time.Minute)
-	startTime := endTime.Add(-10 * time.Minute)
-	q.Set("starttime", startTime.Format(time.RFC3339))
-	q.Set("endtime", endTime.Format(time.RFC3339))
+	q := buildObservationQuery(place, measures)
 
 	resp, err := getFeature("fmi::observations::weather::simple", q)
 	if err != nil {
-		// handle error
-		return "Säähavaintoja ei saatu haettua"
+		return "", errors.New("säähavaintoja ei saatu haettua")
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		// handle error?
-		return "Virhe luettaessa havaintoja"
+		return "", errors.New("virhe luettaessa havaintoja")
 	}
 
 	if resp.StatusCode != 200 {
 		// If place parsing fails, returns 400 with OperationParsingFailed
-		return "Säähavaintopaikkaa ei löytynyt"
+		return "", errors.New("säähavaintopaikkaa ei löytynyt")
 	}
 
-	var collection simpleFeatureCollection
-	xml.Unmarshal(body, &collection)
-
-	if collection.Matched == 0 || collection.Returned == 0 {
-		return "Säähavaintoja ei löytynyt"
+	collection, err := parseFeatureCollection(body)
+	if err != nil || collection.Matched == 0 || collection.Returned == 0 {
+		return "", errors.New("säähavaintoja ei löytynyt")
 	}
 
-	observations := make(map[time.Time]map[string]map[string]float64)
-	times := make([]time.Time, 0)
-	locations := make([]string, 0)
-
-	for _, obs := range collection.Elements {
-		if observations[obs.Time] == nil {
-			times = append(times, obs.Time)
-			observations[obs.Time] = make(map[string]map[string]float64)
-		}
-		if observations[obs.Time][obs.Location] == nil {
-			locations = appendIfMssing(locations, obs.Location)
-			observations[obs.Time][obs.Location] = make(map[string]float64)
-		}
-		observations[obs.Time][obs.Location][obs.Parameter] = obs.Value
-	}
-
-	sort.Slice(times, func(i, j int) bool {
-		return times[i].After(times[j])
-	})
-
-	latestObs := make(map[string]float64)
-	for _, timeIndex := range times {
-		for _, locationIndex := range locations {
-			if countNanMeasures(observations[timeIndex][locationIndex], measures) != len(measures) {
-				latestObs = observations[timeIndex][locationIndex]
-			}
-		}
-	}
+	latestObs := extractLatestObservations(collection, measures)
 	if len(latestObs) == 0 {
-		return "Säähavaintoja ei löytynyt"
+		return "", errors.New("säähavaintoja ei löytynyt")
 	}
 
-	return formatObservations(place, latestObs)
+	return formatObservations(place, latestObs), nil
 }
 
-func countNanMeasures(obs map[string]float64, measures []string) int {
+func countNanMeasures(obs observations, measures []string) int {
 	count := 0
 	for _, measure := range measures {
 		if math.IsNaN(obs[measure]) {
