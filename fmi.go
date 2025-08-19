@@ -1,5 +1,5 @@
 // Package fmi fetches latest weather observations for a given place
-// using FMI's open AI
+// using FMI's open API
 package fmi
 
 import (
@@ -43,58 +43,14 @@ func Weather(place string) string {
 		return "Paikkaa ei syötetty"
 	}
 
-	weather, err := simpleObservations(place)
+	obs, err := getObservations(place)
 	if err != nil {
 		return err.Error()
 	}
+
+	weather := formatObservations(place, obs)
+
 	return weather
-}
-
-// getFeature does a HTTP GET request against FMI's API to fetch data
-// for a stored query with parameters and returns
-func getFeature(query string, parameters url.Values) (*http.Response, error) {
-	endpoint := url.URL{
-		Scheme:   "http",
-		Host:     "opendata.fmi.fi",
-		Path:     "/wfs",
-		RawQuery: "service=WFS&version=2.0.0&request=getFeature",
-	}
-
-	q := endpoint.Query()
-	q.Set("storedquery_id", query)
-
-	for k, vs := range parameters {
-		for _, v := range vs {
-			q.Add(k, v)
-		}
-	}
-
-	endpoint.RawQuery = q.Encode()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-	return http.DefaultClient.Do(req)
-}
-
-func buildObservationQuery(place string, measures []string) url.Values {
-	q := url.Values{}
-	q.Set("place", place)
-	q.Set("maxlocations", "2")
-
-	q.Set("parameters", strings.Join(measures, ","))
-
-	// There should be data every 10 mins
-	q.Set("timestep", "10")
-	endTime := time.Now().UTC().Truncate(10 * time.Minute)
-	startTime := endTime.Add(-10 * time.Minute)
-	q.Set("starttime", startTime.Format(time.RFC3339))
-	q.Set("endtime", endTime.Format(time.RFC3339))
-
-	return q
 }
 
 func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {
@@ -142,7 +98,9 @@ func extractLatestObservations(collection simpleFeatureCollection, measures []st
 	return latestObs
 }
 
-func simpleObservations(place string) (string, error) {
+// getObservations does a HTTP GET request against FMI's API to fetch data
+// for a place
+func getObservations(place string) (observations, error) {
 	/*  Parameters:
 	name		label				measure
 	t2m			Air Temperature		degC
@@ -161,35 +119,67 @@ func simpleObservations(place string) (string, error) {
 	wawa		Present weather		code (00-99)
 				see: https://www.wmo.int/pages/prog/www/WMOCodes/WMO306_vI1/Publications/2017update/Sel9.pdf
 	*/
-	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td"}
-	q := buildObservationQuery(place, measures)
+	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td", "glob_u"}
 
-	resp, err := getFeature("fmi::observations::weather::simple", q)
+	q := url.Values{}
+	q.Set("service", "WFS")
+	q.Set("version", "2.0.0")
+	q.Set("request", "getFeature")
+	q.Set("storedquery_id", "fmi::observations::weather::simple")
+
+	q.Set("place", place)
+	q.Set("maxlocations", "2")
+	q.Set("parameters", strings.Join(measures, ","))
+
+	// There should be data every 10 mins
+	q.Set("timestep", "10")
+	endTime := time.Now().UTC().Truncate(10 * time.Minute)
+	startTime := endTime.Add(-10 * time.Minute)
+	q.Set("starttime", startTime.Format(time.RFC3339))
+	q.Set("endtime", endTime.Format(time.RFC3339))
+
+	endpoint := url.URL{
+		Scheme: "http",
+		Host:   "opendata.fmi.fi",
+		Path:   "/wfs",
+	}
+
+	endpoint.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return "", errors.New("säähavaintoja ei saatu haettua")
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.New("säähavaintoja ei saatu haettua")
 	}
 	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", errors.New("virhe luettaessa havaintoja")
+		return nil, errors.New("virhe luettaessa havaintoja")
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		// If place parsing fails, returns 400 with OperationParsingFailed
-		return "", errors.New("säähavaintopaikkaa ei löytynyt")
+		return nil, errors.New("säähavaintopaikkaa ei löytynyt")
 	}
 
 	collection, err := parseFeatureCollection(body)
 	if err != nil || collection.Matched == 0 || collection.Returned == 0 {
-		return "", errors.New("säähavaintoja ei löytynyt")
+		return nil, errors.New("säähavaintoja ei löytynyt")
 	}
 
 	latestObs := extractLatestObservations(collection, measures)
 	if len(latestObs) == 0 {
-		return "", errors.New("säähavaintoja ei löytynyt")
+		return nil, errors.New("säähavaintoja ei löytynyt")
 	}
 
-	return formatObservations(place, latestObs), nil
+	return latestObs, nil
 }
 
 func countNanMeasures(obs observations, measures []string) int {

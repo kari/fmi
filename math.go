@@ -63,7 +63,7 @@ func FeelsLikeTemperature(t float64, v float64, rh float64, rad float64) float64
 	var heat = SummerSimmer(t, rh)
 	var feels = t + (chill - t) + (heat - t)
 
-	if rad != -1 {
+	if !math.IsNaN(rad) {
 		const absorption = 0.07
 		feels += 0.7*absorption*rad/(v+10) - 0.25
 	}
