@@ -7,23 +7,27 @@ import (
 
 func TestHumidexScale(t *testing.T) {
 	var tests = []struct {
-		h float64
-		s string
+		h  float64
+		s  string
+		ok bool
 	}{
-		{0, ""},
-		{-1, ""},
-		{math.NaN(), ""},
-		{20, "mukava"},
-		{29, "lämmin"},
-		{34, "kuuma"},
-		{39, "tukala"},
-		{40.1, "erittäin tukala"},
-		{100, "erittäin tukala"},
+		{0, "", false},
+		{-1, "", false},
+		{math.NaN(), "", false},
+		{20, "mukava", true},
+		{29, "lämmin", true},
+		{34, "kuuma", true},
+		{39, "tukala", true},
+		{40.1, "erittäin tukala", true},
+		{100, "erittäin tukala", true},
 	}
 	for _, test := range tests {
-		got := humidexScale(test.h)
+		got, ok := humidexScale(test.h)
 		if got != test.s {
 			t.Errorf("humidexScale(%.f) = '%s'; want '%s'", test.h, got, test.s)
+		}
+		if ok != test.ok {
+			t.Errorf("humidexScale(%.f) = '%t'; want '%t'", test.h, ok, test.ok)
 		}
 	}
 }
@@ -55,48 +59,56 @@ func TestWindDirection(t *testing.T) {
 
 func TestWindChillScale(t *testing.T) {
 	var tests = []struct {
-		w float64
-		s string
+		w  float64
+		s  string
+		ok bool
 	}{
-		{0, ""},
-		{-1, ""},
-		{math.NaN(), ""},
-		{-25, "erittäin kylmä"},
-		{-35, "paleltumisvaara"},
-		{-60, "suuri paleltumisvaara"},
-		{-100, "suuri paleltumisvaara"},
+		{0, "", false},
+		{-1, "", false},
+		{math.NaN(), "", false},
+		{-25, "erittäin kylmä", true},
+		{-35, "paleltumisvaara", true},
+		{-60, "suuri paleltumisvaara", true},
+		{-100, "suuri paleltumisvaara", true},
 	}
 	for _, test := range tests {
-		got := windChillScale(test.w)
+		got, ok := windChillScale(test.w)
 		if got != test.s {
 			t.Errorf("windChillScale(%.f) = '%s'; want '%s'", test.w, got, test.s)
+		}
+		if ok != test.ok {
+			t.Errorf("windChillScale(%.f) = '%t'; want '%t'", test.w, ok, test.ok)
 		}
 	}
 }
 
 func TestCloudCover(t *testing.T) {
 	var tests = []struct {
-		d float64
-		s string
+		d  float64
+		s  string
+		ok bool
 	}{
-		{0, "selkeää"},
-		{-1, ""},
-		{math.NaN(), ""},
-		{1, "selkeää"},
-		{2, "melko selkeää"},
-		{3, "melko selkeää"},
-		{4, "puolipilvistä"},
-		{5, "puolipilvistä"},
-		{6, "melko pilvistä"},
-		{7, "melko pilvistä"},
-		{8, "pilvistä"},
-		{9, "taivas ei näy"},
-		{10, ""},
+		{0, "selkeää", true},
+		{-1, "", false},
+		{math.NaN(), "", false},
+		{1, "selkeää", true},
+		{2, "melko selkeää", true},
+		{3, "melko selkeää", true},
+		{4, "puolipilvistä", true},
+		{5, "puolipilvistä", true},
+		{6, "melko pilvistä", true},
+		{7, "melko pilvistä", true},
+		{8, "pilvistä", true},
+		{9, "taivas ei näy", true},
+		{10, "", false},
 	}
 	for _, test := range tests {
-		got := cloudCover(test.d)
+		got, ok := cloudCover(test.d)
 		if got != test.s {
 			t.Errorf("cloudCover(%.f) = '%s'; want '%s'", test.d, got, test.s)
+		}
+		if ok != test.ok {
+			t.Errorf("cloudCover(%.f) = '%t'; want '%t'", test.d, ok, test.ok)
 		}
 	}
 }

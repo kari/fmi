@@ -10,57 +10,91 @@ import (
 )
 
 func formatTemperature(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["t2m"]) {
-		fmt.Fprintf(output, "lämpötila %.1f°C", observations["t2m"])
-		switch {
-		case observations["t2m"] > 20 && !math.IsNaN(observations["td"]):
-			h := humidex(observations["t2m"], observations["td"])
-			if humidexScale(h) != "" {
-				fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", humidexScale(h), h)
-			} else {
-				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", h)
+	if temp, ok := observations["t2m"]; ok && !math.IsNaN(temp) {
+		fmt.Fprintf(output, "lämpötila %.1f°C", temp)
+
+		feels := math.NaN()
+		if ws, ok := observations["ws_10min"]; ok {
+			if rh, ok := observations["rh"]; ok {
+				if rad, ok := observations["glob_u"]; ok {
+					feels = FeelsLikeTemperature(temp, ws, rh, rad)
+				} else {
+					feels = FeelsLikeTemperature(temp, ws, rh, math.NaN())
+				}
 			}
-		case observations["t2m"] <= 10 && !math.IsNaN(observations["ws_10min"]):
-			wc := windChillFmi(observations["t2m"], observations["ws_10min"])
-			if windChillScale(wc) != "" {
-				fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", windChillScale(wc), wc)
+		}
+
+		if td, ok := observations["td"]; ok && temp > 20 {
+			if h, ok := humidexScale(humidex(temp, td)); ok {
+				if !math.IsNaN(feels) {
+					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", h, feels)
+				} else {
+					fmt.Fprintf(output, " (%s)", h)
+				}
 			} else {
-				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", wc)
+				if !math.IsNaN(feels) {
+					fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
+				}
 			}
+		} else if ws, ok := observations["ws_10min"]; ok && temp <= 10 {
+			if wc, ok := windChillScale(windChillFmi(temp, ws)); ok {
+				if !math.IsNaN(feels) {
+					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", wc, feels)
+				} else {
+					fmt.Fprintf(output, " (%s)", wc)
+				}
+			} else {
+				if !math.IsNaN(feels) {
+					fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
+				}
+			}
+		} else if !math.IsNaN(feels) {
+			fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
 		}
 	} else {
 		fmt.Fprint(output, "lämpötilatiedot puuttuvat")
 	}
-
 }
 
 func formatCloudCover(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["n_man"]) {
-		fmt.Fprintf(output, ", %s", cloudCover(observations["n_man"]))
+	if cc, ok := observations["n_man"]; ok {
+		if cover, ok := cloudCover(cc); ok {
+			fmt.Fprintf(output, ", %s", cover)
+		}
 	}
 }
 
 func formatWindSpeed(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["ws_10min"]) {
-		fmt.Fprintf(output, ", %s %.f m/s (%.f m/s)", windSpeed(observations["ws_10min"], observations["wd_10min"]), observations["ws_10min"], observations["wg_10min"])
+	if ws, ok := observations["ws_10min"]; ok {
+		if wd, ok := observations["wd_10min"]; ok {
+			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, wd), ws)
+		} else {
+			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, math.NaN()), ws)
+		}
+		if wg, ok := observations["wg_10min"]; ok && !math.IsNaN(wg) {
+			fmt.Fprintf(output, " (%.1f m/s)", wg)
+		}
 	}
 }
 
 func formatHumidity(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["rh"]) {
-		fmt.Fprintf(output, ", ilmankosteus %.f%%", observations["rh"])
+	if rh, ok := observations["rh"]; ok && !math.IsNaN(rh) {
+		fmt.Fprintf(output, ", ilmankosteus %.f%%", rh)
 	}
 }
 
 func formatRain(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["r_1h"]) && observations["r_1h"] >= 0 {
-		fmt.Fprintf(output, ", sateen määrä %.1f mm (%.1f mm/h)", observations["r_1h"], observations["ri_10min"])
+	if r, ok := observations["r_1h"]; ok && r >= 0 {
+		fmt.Fprintf(output, ", sateen määrä %.1f mm", r)
+		if ri, ok := observations["ri_10min"]; ok {
+			fmt.Fprintf(output, "(%.1f mm/h)", ri)
+		}
 	}
 }
 
 func formatSnow(output *strings.Builder, observations observations) {
-	if !math.IsNaN(observations["snow_aws"]) && observations["snow_aws"] >= 0 {
-		fmt.Fprintf(output, ", lumen syvyys %.f cm", observations["snow_aws"])
+	if snow, ok := observations["snow_aws"]; ok && snow >= 0 {
+		fmt.Fprintf(output, ", lumen syvyys %.f cm", snow)
 	}
 }
 
@@ -138,59 +172,59 @@ func windDirection(d float64) string {
 
 // cloudCover converts the cloud cover measure (1/8) to textual format
 // using definitions at https://ilmatieteenlaitos.fi/pilvisyys
-func cloudCover(d float64) string {
+func cloudCover(d float64) (string, bool) {
 	switch {
 	case d < 0:
-		return ""
+		return "", false
 	case d >= 0 && d <= 1:
-		return "selkeää"
+		return "selkeää", true
 	case d <= 3:
-		return "melko selkeää"
+		return "melko selkeää", true
 	case d <= 5:
-		return "puolipilvistä"
+		return "puolipilvistä", true
 	case d <= 7:
-		return "melko pilvistä"
+		return "melko pilvistä", true
 	case d <= 8:
-		return "pilvistä"
+		return "pilvistä", true
 	case d == 9:
-		return "taivas ei näy"
+		return "taivas ei näy", true
 	}
-	return ""
+	return "", false
 }
 
 // humidexScale converts humidex index h to a textual classification using
 // definitions from:
 // https://web.archive.org/web/20150319113439/http://ilmatieteenlaitos.fi/tietoa-helteen-tukaluudesta
-func humidexScale(h float64) string {
+func humidexScale(h float64) (string, bool) {
 	switch {
 	case h < 20:
-		return ""
+		return "", false
 	case h <= 26:
-		return "mukava"
+		return "mukava", true
 	case h <= 30:
-		return "lämmin"
+		return "lämmin", true
 	case h <= 34:
-		return "kuuma"
+		return "kuuma", true
 	case h <= 40:
-		return "tukala"
+		return "tukala", true
 	case h > 40:
-		return "erittäin tukala"
+		return "erittäin tukala", true
 	}
-	return ""
+	return "", false
 }
 
 // windChillScale converts windChill index w to a textual representation using
 // classifications from https://fi.wikipedia.org/wiki/Pakkasen_purevuus
-func windChillScale(w float64) string {
+func windChillScale(w float64) (string, bool) {
 	switch {
 	case w > -25:
-		return ""
+		return "", false
 	case w <= -60:
-		return "suuri paleltumisvaara"
+		return "suuri paleltumisvaara", true
 	case w <= -35:
-		return "paleltumisvaara"
+		return "paleltumisvaara", true
 	case w <= -25:
-		return "erittäin kylmä"
+		return "erittäin kylmä", true
 	}
-	return ""
+	return "", false
 }
