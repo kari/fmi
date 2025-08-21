@@ -2,6 +2,7 @@ package fmi
 
 import (
 	"fmt"
+	"io"
 	"math"
 	"strings"
 
@@ -9,7 +10,7 @@ import (
 	"golang.org/x/text/language"
 )
 
-func formatTemperature(output *strings.Builder, observations observations) {
+func formatTemperature(output io.Writer, observations observations) {
 	if temp, ok := observations["t2m"]; ok && !math.IsNaN(temp) {
 		fmt.Fprintf(output, "lämpötila %.1f°C", temp)
 
@@ -56,7 +57,7 @@ func formatTemperature(output *strings.Builder, observations observations) {
 	}
 }
 
-func formatCloudCover(output *strings.Builder, observations observations) {
+func formatCloudCover(output io.Writer, observations observations) {
 	if cc, ok := observations["n_man"]; ok {
 		if cover, ok := cloudCover(cc); ok {
 			fmt.Fprintf(output, ", %s", cover)
@@ -64,7 +65,7 @@ func formatCloudCover(output *strings.Builder, observations observations) {
 	}
 }
 
-func formatWindSpeed(output *strings.Builder, observations observations) {
+func formatWindSpeed(output io.Writer, observations observations) {
 	if ws, ok := observations["ws_10min"]; ok {
 		if wd, ok := observations["wd_10min"]; ok {
 			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, wd), ws)
@@ -77,22 +78,22 @@ func formatWindSpeed(output *strings.Builder, observations observations) {
 	}
 }
 
-func formatHumidity(output *strings.Builder, observations observations) {
+func formatHumidity(output io.Writer, observations observations) {
 	if rh, ok := observations["rh"]; ok && !math.IsNaN(rh) {
 		fmt.Fprintf(output, ", ilmankosteus %.f%%", rh)
 	}
 }
 
-func formatRain(output *strings.Builder, observations observations) {
+func formatRain(output io.Writer, observations observations) {
 	if r, ok := observations["r_1h"]; ok && r >= 0 {
 		fmt.Fprintf(output, ", sateen määrä %.1f mm", r)
 		if ri, ok := observations["ri_10min"]; ok {
-			fmt.Fprintf(output, "(%.1f mm/h)", ri)
+			fmt.Fprintf(output, " (%.1f mm/h)", ri)
 		}
 	}
 }
 
-func formatSnow(output *strings.Builder, observations observations) {
+func formatSnow(output io.Writer, observations observations) {
 	if snow, ok := observations["snow_aws"]; ok && snow >= 0 {
 		fmt.Fprintf(output, ", lumen syvyys %.f cm", snow)
 	}
