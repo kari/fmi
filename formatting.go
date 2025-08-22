@@ -18,15 +18,15 @@ func formatTemperature(output io.Writer, observations observations) {
 		if ws, ok := observations["ws_10min"]; ok {
 			if rh, ok := observations["rh"]; ok {
 				if rad, ok := observations["glob_u"]; ok {
-					feels = FeelsLikeTemperature(temp, ws, rh, rad)
+					feels = FeelsLike(temp, ws, rh, rad)
 				} else {
-					feels = FeelsLikeTemperature(temp, ws, rh, math.NaN())
+					feels = FeelsLike(temp, ws, rh, math.NaN())
 				}
 			}
 		}
 
 		if td, ok := observations["td"]; ok && temp > 20 {
-			if h, ok := humidexScale(humidex(temp, td)); ok {
+			if h, ok := humidexScale(Humidex(temp, td)); ok {
 				if !math.IsNaN(feels) {
 					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", h, feels)
 				} else {
@@ -38,7 +38,7 @@ func formatTemperature(output io.Writer, observations observations) {
 				}
 			}
 		} else if ws, ok := observations["ws_10min"]; ok && temp <= 10 {
-			if wc, ok := windChillScale(windChillFmi(temp, ws)); ok {
+			if wc, ok := windChillScale(WindChillFMI(temp, ws)); ok {
 				if !math.IsNaN(feels) {
 					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", wc, feels)
 				} else {

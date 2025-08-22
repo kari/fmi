@@ -17,8 +17,8 @@ func TestFormatTemperature(t *testing.T) {
 		{map[string]float64{"t2m": 12.9, "ws_10min": 5, "rh": 50, "glob_u": 500}, "lämpötila 12.9°C (tuntuu kuin 11.0°C)"},
 		{map[string]float64{"t2m": 22.9, "ws_10min": 5, "rh": 70, "td": 15}, "lämpötila 22.9°C (lämmin, tuntuu kuin 22.3°C)"},
 		{map[string]float64{"t2m": 22.9, "ws_10min": 5, "td": 15}, "lämpötila 22.9°C (lämmin)"},
-		{map[string]float64{"t2m": -22.9, "ws_10min": 15, "rh": 20}, "lämpötila -22.9°C (erittäin kylmä, tuntuu kuin -36.5°C)"},
-		{map[string]float64{"t2m": -22.9, "ws_10min": 15}, "lämpötila -22.9°C (erittäin kylmä)"},
+		{map[string]float64{"t2m": -22.9, "ws_10min": 15, "rh": 20}, "lämpötila -22.9°C (paleltumisvaara, tuntuu kuin -36.5°C)"},
+		{map[string]float64{"t2m": -22.9, "ws_10min": 15}, "lämpötila -22.9°C (paleltumisvaara)"},
 	}
 
 	buf := new(bytes.Buffer)
