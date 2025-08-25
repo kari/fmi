@@ -19,7 +19,7 @@ func TestHumidex(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := Humidex(test.t, test.td)
-		if !cmp.Equal(got, test.h, cmpopts.EquateApprox(tolerance, 0)) {
+		if !cmp.Equal(got, test.h, cmpopts.EquateApprox(0, tolerance)) {
 			t.Errorf("Humidex(%.f, %.f) = %f; want %f", test.t, test.td, got, test.h)
 		}
 	}
@@ -35,7 +35,7 @@ func TestWindChill(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := WindChill(test.t, test.v)
-		if !cmp.Equal(got, test.c, cmpopts.EquateApprox(tolerance, 0)) {
+		if !cmp.Equal(got, test.c, cmpopts.EquateApprox(0, tolerance)) {
 			t.Errorf("WindChill(%.f, %.f) = %f; want %f", test.t, test.v, got, test.c)
 		}
 	}
@@ -52,7 +52,7 @@ func TestSummerSimmer(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := SummerSimmer(test.t, test.rh)
-		if !cmp.Equal(got, test.s, cmpopts.EquateApprox(tolerance, 0)) {
+		if !cmp.Equal(got, test.s, cmpopts.EquateApprox(0, tolerance)) {
 			t.Errorf("SummerSimmer(%.f, %.f) = %f; want %f", test.t, test.rh, got, test.s)
 		}
 	}
@@ -69,7 +69,7 @@ func TestWindChillFMI(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := WindChillFMI(test.t, test.v)
-		if !cmp.Equal(got, test.c, cmpopts.EquateApprox(tolerance, 0)) {
+		if !cmp.Equal(got, test.c, cmpopts.EquateApprox(0, tolerance)) {
 			t.Errorf("windChillFMI(%.f, %.f) = %f; want %f", test.t, test.v, got, test.c)
 		}
 	}
@@ -92,7 +92,7 @@ func TestFeelsLike(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := FeelsLike(test.t, test.v, test.rh, test.rad)
-		if !cmp.Equal(got, test.f, cmpopts.EquateApprox(tolerance, 0)) {
+		if !cmp.Equal(got, test.f, cmpopts.EquateApprox(0, tolerance)) {
 			t.Errorf("FeelsLike(%.f, %.f, %.f, %.f) = %f; want %f", test.t, test.v, test.rh, test.rad, got, test.f)
 		}
 	}
