@@ -14,7 +14,9 @@ import (
 )
 
 func main() {
-    fmt.Println(fmi.Weather("turku"))
+  if weather, err := fmi.Weather("Turku"); err == nil {
+    fmt.Println(weather)
+  }
     // Viimeisimmät säähavainnot paikassa Turku: lämpötila 18.5°C, puolipilvistä, heikkoa länsituulta 4 m/s (6 m/s), ilmankosteus 56%
 }
 ```

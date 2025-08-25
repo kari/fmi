@@ -12,5 +12,8 @@ var place = flag.String("place", "Helsinki", "search weather for place")
 func main() {
 	flag.Parse()
 
-	fmt.Println(fmi.Weather(*place))
+	if weather, err := fmi.Weather(*place); err == nil {
+		fmt.Println(weather)
+	}
+
 }
