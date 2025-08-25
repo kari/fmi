@@ -36,21 +36,20 @@ type observation struct {
 type observations map[string]float64
 
 // Weather returns current weather for a place as a written description
-// or a string representation of the error
-func Weather(place string) string {
+func Weather(place string) (string, error) {
 
 	if place == "" {
-		return "Paikkaa ei syötetty"
+		return "", errors.New("paikkaa ei syötetty")
 	}
 
 	obs, err := getObservations(place)
 	if err != nil {
-		return err.Error()
+		return "", err
 	}
 
 	weather := formatObservations(place, obs)
 
-	return weather
+	return weather, nil
 }
 
 func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {

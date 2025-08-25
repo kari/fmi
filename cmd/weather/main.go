@@ -15,6 +15,11 @@ func main() {
 	} else if os.Args[1] == "version" {
 		fmt.Println("Version:", Version)
 	} else {
-		fmt.Println(fmi.Weather(os.Args[1]))
+		weather, err := fmi.Weather(os.Args[1])
+		if err != nil {
+			fmt.Println(err.Error())
+		} else {
+			fmt.Println(weather)
+		}
 	}
 }
