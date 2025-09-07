@@ -1,18 +1,11 @@
 # Build configuration
 BINARY_NAME=saa
-VERSION?=0.1.0
+VERSION?=$(shell git describe --tags --always --dirty)
 CMD_PATH=./cmd/weather
 
 # Output directories
 DIST_DIR=dist
 BUILD_DIR=build
-
-# Go parameters
-GOCMD=go
-GOBUILD=$(GOCMD) build
-GOTEST=$(GOCMD) test
-GOCLEAN=$(GOCMD) clean
-GOVET=$(GOCMD) vet
 
 # Build flags
 LDFLAGS=-ldflags "-X main.Version=$(VERSION)"
@@ -28,17 +21,17 @@ all: build
 build: vet
 	@echo "Building $(BINARY_NAME) for local platform..."
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(LDFLAGS) $(CMD_PATH)
+	CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY_NAME) $(LDFLAGS) $(CMD_PATH)
 
 # Run tests
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	go test -v ./...
 
 # Run static analysis
 vet:
 	@echo "Vetting code..."
-	$(GOVET) ./...
+	go vet ./...
 
 # Cross-compile for all platforms
 dist: clean vet test
@@ -50,14 +43,14 @@ dist: clean vet test
 		output_name=$(DIST_DIR)/$(BINARY_NAME)-$$GOOS-$$GOARCH; \
 		if [ $$GOOS = "windows" ]; then output_name=$$output_name.exe; fi; \
 		echo "--> Building for $$GOOS/$$GOARCH..."; \
-		CGO_ENABLED=0 GOOS=$$GOOS GOARCH=$$GOARCH $(GOBUILD) -o $$output_name $(LDFLAGS) $(CMD_PATH); \
+		CGO_ENABLED=0 GOOS=$$GOOS GOARCH=$$GOARCH go build -o $$output_name $(LDFLAGS) $(CMD_PATH); \
 	done
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning up..."
 	@rm -rf $(BUILD_DIR) $(DIST_DIR)
-	$(GOCLEAN)
+	go clean
 
 # Development target: build and run
 dev: build
