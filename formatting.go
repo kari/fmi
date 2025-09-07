@@ -32,10 +32,8 @@ func formatTemperature(output io.Writer, observations observations) {
 				} else {
 					fmt.Fprintf(output, " (%s)", h)
 				}
-			} else {
-				if !math.IsNaN(feels) {
-					fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
-				}
+			} else if !math.IsNaN(feels) {
+				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
 			}
 		} else if ws, ok := observations["ws_10min"]; ok && temp <= 10 {
 			if wc, ok := windChillScale(WindChillFMI(temp, ws)); ok {
@@ -66,7 +64,7 @@ func formatCloudCover(output io.Writer, observations observations) {
 }
 
 func formatWindSpeed(output io.Writer, observations observations) {
-	if ws, ok := observations["ws_10min"]; ok {
+	if ws, ok := observations["ws_10min"]; ok && !math.IsNaN(ws) {
 		if wd, ok := observations["wd_10min"]; ok {
 			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, wd), ws)
 		} else {
