@@ -1,5 +1,5 @@
 binary := "saa"
-cmd := "./cmd/weather"
+cmd := "./cmd/saa"
 version := `git describe --tags --always --dirty`
 version_flag := "-X main.Version=" + version
 lint := `command -v golangci-lint 2>/dev/null || echo "$HOME/go/bin/golangci-lint"`

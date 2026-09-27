@@ -33,6 +33,15 @@ Katso examples/ -kansiosta lisää esimerkkejä.
 
 Huom. FMI:n rajapinta tunnistaa jotkin paikat vain ruotsinkielisellä nimellä (esim. Tammisaari löytyy vain nimellä Ekenäs, ks. [issue #2](https://github.com/kari/fmi/issues/2)).
 
+## Komentorivityökalu
+
+Kirjaston mukana tulee yksinkertainen komentorivityökalu:
+
+```sh
+go install github.com/kari/fmi/cmd/saa@latest
+saa Turku
+```
+
 ## Lähteet
 
 * [Ilmatieteen laitoksen latauspalvelun pikaohje](https://ilmatieteenlaitos.fi/latauspalvelun-pikaohje)
@@ -42,7 +51,7 @@ Huom. FMI:n rajapinta tunnistaa jotkin paikat vain ruotsinkielisellä nimellä (
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-Please make sure to update tests as appropriate.
+Please make sure to update tests as appropriate, and run `just check` (tests and linter) before submitting.
 
 ## License
 
