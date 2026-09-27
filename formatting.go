@@ -10,107 +10,93 @@ import (
 	"golang.org/x/text/language"
 )
 
-func formatTemperature(output io.Writer, observations observations) {
-	if temp, ok := observations["t2m"]; ok && !math.IsNaN(temp) {
-		fmt.Fprintf(output, "lämpötila %.1f°C", temp)
-
-		feels := math.NaN()
-		if ws, ok := observations["ws_10min"]; ok {
-			if rh, ok := observations["rh"]; ok {
-				if rad, ok := observations["glob_u"]; ok {
-					feels = FeelsLike(temp, ws, rh, rad)
-				} else {
-					feels = FeelsLike(temp, ws, rh, math.NaN())
-				}
-			}
-		}
-
-		if td, ok := observations["td"]; ok && temp > 20 {
-			if h, ok := humidexScale(Humidex(temp, td)); ok {
-				if !math.IsNaN(feels) {
-					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", h, feels)
-				} else {
-					fmt.Fprintf(output, " (%s)", h)
-				}
-			} else if !math.IsNaN(feels) {
-				fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
-			}
-		} else if ws, ok := observations["ws_10min"]; ok && temp <= 10 {
-			if wc, ok := windChillScale(WindChillFMI(temp, ws)); ok {
-				if !math.IsNaN(feels) {
-					fmt.Fprintf(output, " (%s, tuntuu kuin %.1f°C)", wc, feels)
-				} else {
-					fmt.Fprintf(output, " (%s)", wc)
-				}
-			} else {
-				if !math.IsNaN(feels) {
-					fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
-				}
-			}
-		} else if !math.IsNaN(feels) {
-			fmt.Fprintf(output, " (tuntuu kuin %.1f°C)", feels)
-		}
-	} else {
+func formatTemperature(output io.Writer, o observations) {
+	temp := o.Temperature
+	if math.IsNaN(temp) {
 		fmt.Fprint(output, "lämpötilatiedot puuttuvat")
+		return
+	}
+
+	fmt.Fprintf(output, "lämpötila %.1f°C", temp)
+
+	feels := math.NaN()
+	if !math.IsNaN(o.WindSpeed) && !math.IsNaN(o.Humidity) {
+		feels = FeelsLike(temp, o.WindSpeed, o.Humidity, o.Radiation)
+	}
+
+	// Humidex classifies heat and wind chill cold; both share the
+	// parenthesis with the feels-like temperature.
+	label := ""
+	if td := o.DewPoint; !math.IsNaN(td) && temp > 20 {
+		label, _ = humidexScale(Humidex(temp, td))
+	} else if ws := o.WindSpeed; !math.IsNaN(ws) && temp <= 10 {
+		label, _ = windChillScale(WindChillFMI(temp, ws))
+	}
+
+	var parts []string
+	if label != "" {
+		parts = append(parts, label)
+	}
+	if !math.IsNaN(feels) {
+		parts = append(parts, fmt.Sprintf("tuntuu kuin %.1f°C", feels))
+	}
+	if len(parts) > 0 {
+		fmt.Fprintf(output, " (%s)", strings.Join(parts, ", "))
 	}
 }
 
-func formatCloudCover(output io.Writer, observations observations) {
-	if cc, ok := observations["n_man"]; ok {
-		if cover, ok := cloudCover(cc); ok {
-			fmt.Fprintf(output, ", %s", cover)
-		}
+func formatCloudCover(output io.Writer, o observations) {
+	if cover, ok := cloudCover(o.CloudCover); ok {
+		fmt.Fprintf(output, ", %s", cover)
 	}
 }
 
-func formatWindSpeed(output io.Writer, observations observations) {
-	if ws, ok := observations["ws_10min"]; ok && !math.IsNaN(ws) {
-		if wd, ok := observations["wd_10min"]; ok {
-			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, wd), ws)
-		} else {
-			fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, math.NaN()), ws)
-		}
-		if wg, ok := observations["wg_10min"]; ok && !math.IsNaN(wg) {
-			fmt.Fprintf(output, " (%.1f m/s)", wg)
-		}
+func formatWindSpeed(output io.Writer, o observations) {
+	ws := o.WindSpeed
+	if math.IsNaN(ws) {
+		return
+	}
+	fmt.Fprintf(output, ", %s %.1f m/s", windSpeed(ws, o.WindDirection), ws)
+	if wg := o.WindGust; !math.IsNaN(wg) {
+		fmt.Fprintf(output, " (%.1f m/s)", wg)
 	}
 }
 
-func formatHumidity(output io.Writer, observations observations) {
-	if rh, ok := observations["rh"]; ok && !math.IsNaN(rh) {
+func formatHumidity(output io.Writer, o observations) {
+	if rh := o.Humidity; !math.IsNaN(rh) {
 		fmt.Fprintf(output, ", ilmankosteus %.f%%", rh)
 	}
 }
 
-func formatRain(output io.Writer, observations observations) {
-	if r, ok := observations["r_1h"]; ok && r >= 0 {
+func formatRain(output io.Writer, o observations) {
+	if r := o.Precipitation; !math.IsNaN(r) && r >= 0 {
 		fmt.Fprintf(output, ", sateen määrä %.1f mm", r)
-		if ri, ok := observations["ri_10min"]; ok {
+		if ri := o.RainIntensity; !math.IsNaN(ri) {
 			fmt.Fprintf(output, " (%.1f mm/h)", ri)
 		}
 	}
 }
 
-func formatSnow(output io.Writer, observations observations) {
-	if snow, ok := observations["snow_aws"]; ok && snow >= 0 {
+func formatSnow(output io.Writer, o observations) {
+	if snow := o.SnowDepth; !math.IsNaN(snow) && snow >= 0 {
 		fmt.Fprintf(output, ", lumen syvyys %.f cm", snow)
 	}
 }
 
 // formatObservations returns a string representation of weather observations
 // at a place
-func formatObservations(place string, observations observations) string {
+func formatObservations(place string, o observations) string {
 	var output strings.Builder
 
 	c := cases.Title(language.Finnish)
 
 	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", c.String(strings.ToLower(place)))
-	formatTemperature(&output, observations)
-	formatCloudCover(&output, observations)
-	formatWindSpeed(&output, observations)
-	formatHumidity(&output, observations)
-	formatRain(&output, observations)
-	formatSnow(&output, observations)
+	formatTemperature(&output, o)
+	formatCloudCover(&output, o)
+	formatWindSpeed(&output, o)
+	formatHumidity(&output, o)
+	formatRain(&output, o)
+	formatSnow(&output, o)
 
 	return output.String()
 }
@@ -185,7 +171,8 @@ func cloudCover(d float64) (string, bool) {
 		return "melko pilvistä", true
 	case d <= 8:
 		return "pilvistä", true
-	case d == 9:
+	case d > 8:
+		// 9 means the sky is not visible
 		return "taivas ei näy", true
 	}
 	return "", false

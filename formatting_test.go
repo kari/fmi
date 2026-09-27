@@ -6,19 +6,22 @@ import (
 	"testing"
 )
 
+// The format functions read only the fields they format, but every field
+// they read must be set explicitly: unset fields are 0.0, which counts as
+// a valid measure, so missing measures are NaN.
 func TestFormatTemperature(t *testing.T) {
 	var tests = []struct {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, "lämpötilatiedot puuttuvat"},
-		{map[string]float64{"t2m": 12.9}, "lämpötila 12.9°C"},
-		{map[string]float64{"t2m": 12.9, "ws_10min": 5, "rh": 50}, "lämpötila 12.9°C (tuntuu kuin 9.7°C)"},
-		{map[string]float64{"t2m": 12.9, "ws_10min": 5, "rh": 50, "glob_u": 500}, "lämpötila 12.9°C (tuntuu kuin 11.0°C)"},
-		{map[string]float64{"t2m": 22.9, "ws_10min": 5, "rh": 70, "td": 15}, "lämpötila 22.9°C (lämmin, tuntuu kuin 22.3°C)"},
-		{map[string]float64{"t2m": 22.9, "ws_10min": 5, "td": 15}, "lämpötila 22.9°C (lämmin)"},
-		{map[string]float64{"t2m": -22.9, "ws_10min": 15, "rh": 20}, "lämpötila -22.9°C (paleltumisvaara, tuntuu kuin -36.5°C)"},
-		{map[string]float64{"t2m": -22.9, "ws_10min": 15}, "lämpötila -22.9°C (paleltumisvaara)"},
+		{observations{Temperature: math.NaN()}, "lämpötilatiedot puuttuvat"},
+		{observations{Temperature: 12.9, WindSpeed: math.NaN(), Humidity: math.NaN(), DewPoint: math.NaN(), Radiation: math.NaN()}, "lämpötila 12.9°C"},
+		{observations{Temperature: 12.9, WindSpeed: 5, Humidity: 50, DewPoint: math.NaN(), Radiation: math.NaN()}, "lämpötila 12.9°C (tuntuu kuin 9.7°C)"},
+		{observations{Temperature: 12.9, WindSpeed: 5, Humidity: 50, DewPoint: math.NaN(), Radiation: 500}, "lämpötila 12.9°C (tuntuu kuin 11.0°C)"},
+		{observations{Temperature: 22.9, WindSpeed: 5, Humidity: 70, DewPoint: 15, Radiation: math.NaN()}, "lämpötila 22.9°C (lämmin, tuntuu kuin 22.3°C)"},
+		{observations{Temperature: 22.9, WindSpeed: 5, Humidity: math.NaN(), DewPoint: 15, Radiation: math.NaN()}, "lämpötila 22.9°C (lämmin)"},
+		{observations{Temperature: -22.9, WindSpeed: 15, Humidity: 20, DewPoint: math.NaN(), Radiation: math.NaN()}, "lämpötila -22.9°C (paleltumisvaara, tuntuu kuin -36.5°C)"},
+		{observations{Temperature: -22.9, WindSpeed: 15, Humidity: math.NaN(), DewPoint: math.NaN(), Radiation: math.NaN()}, "lämpötila -22.9°C (paleltumisvaara)"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -36,8 +39,8 @@ func TestFormatCloudCover(t *testing.T) {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, ""},
-		{map[string]float64{"n_man": 1}, ", selkeää"},
+		{observations{CloudCover: math.NaN()}, ""},
+		{observations{CloudCover: 1}, ", selkeää"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -55,10 +58,10 @@ func TestFormatWindSpeed(t *testing.T) {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, ""},
-		{map[string]float64{"ws_10min": 1.1}, ", heikkoa tuulta 1.1 m/s"},
-		{map[string]float64{"ws_10min": 1.1, "wd_10min": 225}, ", heikkoa lounaistuulta 1.1 m/s"},
-		{map[string]float64{"ws_10min": 1.1, "wd_10min": 225, "wg_10min": 3.2}, ", heikkoa lounaistuulta 1.1 m/s (3.2 m/s)"},
+		{observations{WindSpeed: math.NaN(), WindDirection: math.NaN(), WindGust: math.NaN()}, ""},
+		{observations{WindSpeed: 1.1, WindDirection: math.NaN(), WindGust: math.NaN()}, ", heikkoa tuulta 1.1 m/s"},
+		{observations{WindSpeed: 1.1, WindDirection: 225, WindGust: math.NaN()}, ", heikkoa lounaistuulta 1.1 m/s"},
+		{observations{WindSpeed: 1.1, WindDirection: 225, WindGust: 3.2}, ", heikkoa lounaistuulta 1.1 m/s (3.2 m/s)"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -76,8 +79,8 @@ func TestFormatHumidity(t *testing.T) {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, ""},
-		{map[string]float64{"rh": 65}, ", ilmankosteus 65%"},
+		{observations{Humidity: math.NaN()}, ""},
+		{observations{Humidity: 65}, ", ilmankosteus 65%"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -95,9 +98,9 @@ func TestFormatRain(t *testing.T) {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, ""},
-		{map[string]float64{"r_1h": 1.1}, ", sateen määrä 1.1 mm"},
-		{map[string]float64{"r_1h": 1.1, "ri_10min": 0.5}, ", sateen määrä 1.1 mm (0.5 mm/h)"},
+		{observations{Precipitation: math.NaN(), RainIntensity: math.NaN()}, ""},
+		{observations{Precipitation: 1.1, RainIntensity: math.NaN()}, ", sateen määrä 1.1 mm"},
+		{observations{Precipitation: 1.1, RainIntensity: 0.5}, ", sateen määrä 1.1 mm (0.5 mm/h)"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -115,8 +118,8 @@ func TestFormatSnow(t *testing.T) {
 		obs observations
 		s   string
 	}{
-		{map[string]float64{}, ""},
-		{map[string]float64{"snow_aws": 7}, ", lumen syvyys 7 cm"},
+		{observations{SnowDepth: math.NaN()}, ""},
+		{observations{SnowDepth: 7}, ", lumen syvyys 7 cm"},
 	}
 
 	buf := new(bytes.Buffer)
@@ -224,7 +227,7 @@ func TestCloudCover(t *testing.T) {
 		{7, "melko pilvistä", true},
 		{8, "pilvistä", true},
 		{9, "taivas ei näy", true},
-		{10, "", false},
+		{10, "taivas ei näy", true},
 	}
 	for _, test := range tests {
 		got, ok := cloudCover(test.d)

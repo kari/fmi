@@ -70,7 +70,7 @@ func TestWindChillFMI(t *testing.T) {
 	for _, test := range tests {
 		got := WindChillFMI(test.t, test.v)
 		if !cmp.Equal(got, test.c, cmpopts.EquateApprox(0, tolerance)) {
-			t.Errorf("windChillFMI(%.f, %.f) = %f; want %f", test.t, test.v, got, test.c)
+			t.Errorf("WindChillFMI(%.f, %.f) = %f; want %f", test.t, test.v, got, test.c)
 		}
 	}
 }

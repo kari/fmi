@@ -20,12 +20,12 @@ func WindChill(t float64, v float64) float64 {
 	return 13.12 + 0.6215*t - 13.956*math.Pow(v, 0.16) + 0.4867*t*math.Pow(v, 0.16)
 }
 
-// WindChillFmi calculates wind chill with FMI's formula
+// WindChillFMI calculates wind chill with FMI's formula
 // For reference see,
 // https://github.com/fmidev/smartmet-library-newbase/blob/0da9473163883089c35a4c7267ba4c8a8bb3e14f/newbase/NFmiMetMath.cpp#L380
 // https://tietopyynto.fi/tietopyynto/ilmatieteen-laitoksen-kayttama-tuntuu-kuin-laskentakaava/
 func WindChillFMI(t float64, v float64) float64 {
-	var kmh = v * 3.6
+	kmh := v * 3.6
 
 	if kmh < 5 {
 		return t + (-1.59+0.1345*t)/5*kmh
@@ -45,7 +45,7 @@ func SummerSimmer(t float64, rh float64) float64 {
 		return t
 	}
 
-	var r = rh / 100.0
+	r := rh / 100.0
 
 	return (1.8*t - 0.55*(1-r)*(1.8*t-26) - 0.55*(1-rhRef)*26) / (1.8 * (1 - 0.55*(1-rhRef)))
 }

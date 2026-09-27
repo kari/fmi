@@ -1,5 +1,6 @@
 # FMI
 
+[![Go](https://github.com/kari/fmi/actions/workflows/go.yml/badge.svg)](https://github.com/kari/fmi/actions/workflows/go.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kari/fmi)](https://goreportcard.com/report/github.com/kari/fmi)
 
 Tämä Go-kirjasto hakee Ilmatieteen laitoksen rajapintojen kautta viimeisimmät säähavainnot halutulle paikalle. Hyödyllinen esimerkiksi IRC-bottia varten.
@@ -8,18 +9,26 @@ Tämä Go-kirjasto hakee Ilmatieteen laitoksen rajapintojen kautta viimeisimmät
 
 ```go
 import (
+    "errors"
     "fmt"
+    "log"
 
     "github.com/kari/fmi"
 )
 
 func main() {
-  if weather, err := fmi.Weather("Turku"); err == nil {
-    fmt.Println(weather)
+  weather, err := fmi.Weather("Turku")
+  if errors.Is(err, fmi.ErrUnknownPlace) {
+    log.Fatal("tuntematon paikka")
+  } else if err != nil {
+    log.Fatal(err)
   }
+  fmt.Println(weather)
     // Viimeisimmät säähavainnot paikassa Turku: lämpötila 18.5°C, puolipilvistä, heikkoa länsituulta 4 m/s (6 m/s), ilmankosteus 56%
 }
 ```
+
+Kirjasto palauttaa virheet `fmi.ErrNoPlace`, `fmi.ErrFetchFailed`, `fmi.ErrUnknownPlace` ja `fmi.ErrNoObservations`, jotka voi tunnistaa `errors.Is`:llä.
 
 Katso examples/ -kansiosta lisää esimerkkejä.
 

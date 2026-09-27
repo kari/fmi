@@ -1,0 +1,16 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Writing to a strings.Builder or stderr cannot usefully fail here,
+      # and response body Close errors are not actionable.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+
+formatters:
+  enable:
+    - gofmt

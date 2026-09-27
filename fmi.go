@@ -1,4 +1,5 @@
 // Package fmi fetches latest weather observations for a given place
+
 // using FMI's open API
 package fmi
 
@@ -6,40 +7,155 @@ import (
 	"context"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 )
 
+// Errors reported by Weather. Identify them with errors.Is.
+var (
+	// ErrNoPlace is returned when the place argument is empty.
+	ErrNoPlace = errors.New("paikkaa ei syötetty")
+
+	// ErrFetchFailed is returned when FMI cannot be reached or replies
+	// with an unexpected HTTP status.
+	ErrFetchFailed = errors.New("säähavaintoja ei saatu haettua")
+
+	// ErrUnknownPlace is returned when FMI does not recognize the place.
+	ErrUnknownPlace = errors.New("säähavaintopaikkaa ei löytynyt")
+
+	// ErrNoObservations is returned when FMI has no usable observations
+	// for the place.
+	ErrNoObservations = errors.New("säähavaintoja ei löytynyt")
+)
+
 // simpleFeatureCollection is a struct in returned XML
 type simpleFeatureCollection struct {
-	Timestamp time.Time     `xml:"timeStamp,attr"`
-	Returned  int           `xml:"numberReturned,attr"`
-	Matched   int           `xml:"numberMatched,attr"`
-	Elements  []observation `xml:"member>BsWfsElement"`
+	Timestamp time.Time `xml:"timeStamp,attr"`
+	Returned  int       `xml:"numberReturned,attr"`
+	Matched   int       `xml:"numberMatched,attr"`
+	Elements  []measure `xml:"member>BsWfsElement"`
 }
 
-// observation is a struct in returned XML
-type observation struct {
+// measure is a single raw measure (one parameter and its value) in the
+// returned XML
+type measure struct {
 	Location  string    `xml:"Location>Point>pos"`
 	Time      time.Time `xml:"Time"`
 	Parameter string    `xml:"ParameterName"`
 	Value     float64   `xml:"ParameterValue"`
 }
 
-// observations holds observations for a place as a map
-type observations map[string]float64
+// FMI parameter names returned by the weather observations API
+const (
+	paramTemperature   = "t2m"
+	paramWindSpeed     = "ws_10min"
+	paramWindGust      = "wg_10min"
+	paramWindDirection = "wd_10min"
+	paramHumidity      = "rh"
+	paramDewPoint      = "td"
+	paramPrecipitation = "r_1h"
+	paramRainIntensity = "ri_10min"
+	paramSnowDepth     = "snow_aws"
+	paramCloudCover    = "n_man"
+	paramRadiation     = "glob_u"
+)
 
-// Weather returns current weather for a place as a written description
+// observations holds the weather measures of one station at one time.
+// A NaN value means the measure is missing from the observation.
+type observations struct {
+	Temperature   float64 // degC
+	WindSpeed     float64 // m/s
+	WindGust      float64 // m/s
+	WindDirection float64 // degrees
+	Humidity      float64 // %
+	DewPoint      float64 // degC
+	Precipitation float64 // mm over the last hour
+	RainIntensity float64 // mm/h
+	SnowDepth     float64 // cm
+	CloudCover    float64 // 1/8
+	Radiation     float64 // W/m²
+}
+
+// nanObservation returns an observation where every measure is missing
+func nanObservation() observations {
+	return observations{
+		Temperature:   math.NaN(),
+		WindSpeed:     math.NaN(),
+		WindGust:      math.NaN(),
+		WindDirection: math.NaN(),
+		Humidity:      math.NaN(),
+		DewPoint:      math.NaN(),
+		Precipitation: math.NaN(),
+		RainIntensity: math.NaN(),
+		SnowDepth:     math.NaN(),
+		CloudCover:    math.NaN(),
+		Radiation:     math.NaN(),
+	}
+}
+
+// set stores a raw measure in the matching field. Unknown parameters are
+// ignored.
+func (o *observations) set(param string, value float64) {
+	switch param {
+	case paramTemperature:
+		o.Temperature = value
+	case paramWindSpeed:
+		o.WindSpeed = value
+	case paramWindGust:
+		o.WindGust = value
+	case paramWindDirection:
+		o.WindDirection = value
+	case paramHumidity:
+		o.Humidity = value
+	case paramDewPoint:
+		o.DewPoint = value
+	case paramPrecipitation:
+		o.Precipitation = value
+	case paramRainIntensity:
+		o.RainIntensity = value
+	case paramSnowDepth:
+		o.SnowDepth = value
+	case paramCloudCover:
+		o.CloudCover = value
+	case paramRadiation:
+		o.Radiation = value
+	}
+}
+
+// newObservation builds an observation from the raw measures of one
+// station at one time; measures the station does not report stay NaN.
+func newObservation(params map[string]float64) observations {
+	o := nanObservation()
+	for param, value := range params {
+		o.set(param, value)
+	}
+	return o
+}
+
+// hasValue reports whether at least one of the raw measures is not NaN
+func hasValue(params map[string]float64) bool {
+	for _, v := range params {
+		if !math.IsNaN(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// Weather returns current weather for a place as a written description.
+// The error can be inspected with errors.Is against the package's Err
+// values, with the underlying cause kept intact. Weather is safe to call
+// from multiple goroutines.
 func Weather(place string) (string, error) {
 
 	if place == "" {
-		return "", errors.New("paikkaa ei syötetty")
+		return "", ErrNoPlace
 	}
 
 	obs, err := getObservations(place)
@@ -56,45 +172,57 @@ func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {
 	var collection simpleFeatureCollection
 
 	if err := xml.Unmarshal(data, &collection); err != nil {
-		return simpleFeatureCollection{}, errors.New("virhe parsittaessa havaintoja")
+		return simpleFeatureCollection{}, fmt.Errorf("virhe parsittaessa havaintoja: %w", err)
 	}
 
 	return collection, nil
 }
 
-func extractLatestObservations(collection simpleFeatureCollection, measures []string) observations {
-	observations := make(map[time.Time]map[string]map[string]float64)
-	times := make([]time.Time, 0)
-	locations := make([]string, 0)
-
-	for _, obs := range collection.Elements {
-		if observations[obs.Time] == nil {
-			times = append(times, obs.Time)
-			observations[obs.Time] = make(map[string]map[string]float64)
-		}
-		if observations[obs.Time][obs.Location] == nil {
-			if !slices.Contains(locations, obs.Location) {
-				locations = append(locations, obs.Location)
-			}
-			observations[obs.Time][obs.Location] = make(map[string]float64)
-		}
-		observations[obs.Time][obs.Location][obs.Parameter] = obs.Value
+// extractLatestObservations returns the most recent observation that has
+// at least one measure. FMI may return observations where every measure
+// is NaN and up to maxlocations stations, so the newest timestamp with a
+// populated station wins. Stations sharing a timestamp are tried in the
+// order FMI returned them, nearest to the place first.
+func extractLatestObservations(collection simpleFeatureCollection) (observations, bool) {
+	type stationTime struct {
+		time     time.Time
+		location string
 	}
 
-	sort.Slice(times, func(i, j int) bool {
-		return times[i].After(times[j])
+	// Group the raw measures by station and observation time. Keys are
+	// kept in the order the stations first appear in the response.
+	groups := make(map[stationTime]map[string]float64)
+	var keys []stationTime
+	for _, obs := range collection.Elements {
+		key := stationTime{time: obs.Time, location: obs.Location}
+		if groups[key] == nil {
+			groups[key] = make(map[string]float64)
+			keys = append(keys, key)
+		}
+		groups[key][obs.Parameter] = obs.Value
+	}
+
+	// Newest first. The stable sort keeps stations of the same timestamp
+	// in FMI's order.
+	slices.SortStableFunc(keys, func(a, b stationTime) int {
+		return b.time.Compare(a.time)
 	})
 
-	latestObs := make(map[string]float64)
-	for _, timeIndex := range times {
-		for _, locationIndex := range locations {
-			if countNanMeasures(observations[timeIndex][locationIndex], measures) != len(measures) {
-				latestObs = observations[timeIndex][locationIndex]
-			}
+	for _, key := range keys {
+		if hasValue(groups[key]) {
+			return newObservation(groups[key]), true
 		}
 	}
 
-	return latestObs
+	return observations{}, false
+}
+
+// apiURL is the endpoint of FMI's open data service. Tests override it
+// to serve canned responses.
+var apiURL = url.URL{
+	Scheme: "https",
+	Host:   "opendata.fmi.fi",
+	Path:   "/wfs",
 }
 
 // getObservations does a HTTP GET request against FMI's API to fetch data
@@ -118,7 +246,19 @@ func getObservations(place string) (observations, error) {
 	wawa		Present weather		code (00-99)
 				see: https://www.wmo.int/pages/prog/www/WMOCodes/WMO306_vI1/Publications/2017update/Sel9.pdf
 	*/
-	measures := []string{"t2m", "ws_10min", "wg_10min", "wd_10min", "rh", "r_1h", "ri_10min", "snow_aws", "n_man", "td", "glob_u"}
+	measures := []string{
+		paramTemperature,
+		paramWindSpeed,
+		paramWindGust,
+		paramWindDirection,
+		paramHumidity,
+		paramPrecipitation,
+		paramRainIntensity,
+		paramSnowDepth,
+		paramCloudCover,
+		paramDewPoint,
+		paramRadiation,
+	}
 
 	q := url.Values{}
 	q.Set("service", "WFS")
@@ -137,56 +277,48 @@ func getObservations(place string) (observations, error) {
 	q.Set("starttime", startTime.Format(time.RFC3339))
 	q.Set("endtime", endTime.Format(time.RFC3339))
 
-	endpoint := url.URL{
-		Scheme: "http",
-		Host:   "opendata.fmi.fi",
-		Path:   "/wfs",
-	}
-
+	endpoint := apiURL
 	endpoint.RawQuery = q.Encode()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return nil, err
+		return observations{}, err
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, errors.New("säähavaintoja ei saatu haettua")
+		return observations{}, fmt.Errorf("%w: %w", ErrFetchFailed, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.New("virhe luettaessa havaintoja")
+		return observations{}, fmt.Errorf("virhe luettaessa havaintoja: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// If place parsing fails, returns 400 with OperationParsingFailed
-		return nil, errors.New("säähavaintopaikkaa ei löytynyt")
+		// FMI replies 400 with OperationParsingFailed when the place
+		// cannot be parsed
+		if resp.StatusCode == http.StatusBadRequest {
+			return observations{}, ErrUnknownPlace
+		}
+		return observations{}, fmt.Errorf("%w (HTTP %d)", ErrFetchFailed, resp.StatusCode)
 	}
 
 	collection, err := parseFeatureCollection(body)
-	if err != nil || collection.Matched == 0 || collection.Returned == 0 {
-		return nil, errors.New("säähavaintoja ei löytynyt")
+	if err != nil {
+		return observations{}, err
+	}
+	if collection.Matched == 0 || collection.Returned == 0 {
+		return observations{}, ErrNoObservations
 	}
 
-	latestObs := extractLatestObservations(collection, measures)
-	if len(latestObs) == 0 {
-		return nil, errors.New("säähavaintoja ei löytynyt")
+	latestObs, found := extractLatestObservations(collection)
+	if !found {
+		return observations{}, ErrNoObservations
 	}
 
 	return latestObs, nil
-}
-
-func countNanMeasures(obs observations, measures []string) int {
-	count := 0
-	for _, measure := range measures {
-		if math.IsNaN(obs[measure]) {
-			count++
-		}
-	}
-	return count
 }
