@@ -1,5 +1,4 @@
 // Package fmi fetches latest weather observations for a given place
-
 // using FMI's open API
 package fmi
 
@@ -15,9 +14,12 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
-// Errors reported by Weather. Identify them with errors.Is.
+// Errors reported by Weather and Current. Identify them with errors.Is.
 var (
 	// ErrNoPlace is returned when the place argument is empty.
 	ErrNoPlace = errors.New("paikkaa ei syötetty")
@@ -66,9 +68,13 @@ const (
 	paramRadiation     = "glob_u"
 )
 
-// observations holds the weather measures of one station at one time.
+// Observations holds the weather measures of one station at one time.
 // A NaN value means the measure is missing from the observation.
-type observations struct {
+//
+// The zero value is not meaningful: unset fields read as 0.0, which is a
+// valid measure, so obtain Observations from Current instead of
+// constructing one by hand.
+type Observations struct {
 	Temperature   float64 // degC
 	WindSpeed     float64 // m/s
 	WindGust      float64 // m/s
@@ -77,14 +83,14 @@ type observations struct {
 	DewPoint      float64 // degC
 	Precipitation float64 // mm over the last hour
 	RainIntensity float64 // mm/h
-	SnowDepth     float64 // cm
-	CloudCover    float64 // 1/8
+	SnowDepth     float64 // cm, -1 means no snow
+	CloudCover    float64 // 1/8, 9 means the sky is not visible
 	Radiation     float64 // W/m²
 }
 
-// nanObservation returns an observation where every measure is missing
-func nanObservation() observations {
-	return observations{
+// nanObservation returns an Observations where every measure is missing
+func nanObservation() Observations {
+	return Observations{
 		Temperature:   math.NaN(),
 		WindSpeed:     math.NaN(),
 		WindGust:      math.NaN(),
@@ -101,7 +107,7 @@ func nanObservation() observations {
 
 // set stores a raw measure in the matching field. Unknown parameters are
 // ignored.
-func (o *observations) set(param string, value float64) {
+func (o *Observations) set(param string, value float64) {
 	switch param {
 	case paramTemperature:
 		o.Temperature = value
@@ -130,7 +136,7 @@ func (o *observations) set(param string, value float64) {
 
 // newObservation builds an observation from the raw measures of one
 // station at one time; measures the station does not report stay NaN.
-func newObservation(params map[string]float64) observations {
+func newObservation(params map[string]float64) Observations {
 	o := nanObservation()
 	for param, value := range params {
 		o.set(param, value)
@@ -148,24 +154,61 @@ func hasValue(params map[string]float64) bool {
 	return false
 }
 
-// Weather returns current weather for a place as a written description.
-// The error can be inspected with errors.Is against the package's Err
-// values, with the underlying cause kept intact. Weather is safe to call
-// from multiple goroutines.
-func Weather(place string) (string, error) {
+// Conditions holds the latest observations of a place.
+type Conditions struct {
+	Place        string
+	Time         time.Time // timestamp of the observations
+	Observations Observations
+}
 
+// String returns the conditions as a written description.
+func (c Conditions) String() string {
+	var output strings.Builder
+
+	caser := cases.Title(language.Finnish)
+
+	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", caser.String(strings.ToLower(c.Place)))
+	formatTemperature(&output, c.Observations)
+	formatCloudCover(&output, c.Observations)
+	formatWindSpeed(&output, c.Observations)
+	formatHumidity(&output, c.Observations)
+	formatRain(&output, c.Observations)
+	formatSnow(&output, c.Observations)
+
+	return output.String()
+}
+
+// Current returns the latest observations of a place as structured
+// Conditions. The error can be inspected with errors.Is against the
+// package's Err values, with the underlying cause kept intact. Current
+// is safe to call from multiple goroutines.
+func Current(ctx context.Context, place string) (Conditions, error) {
 	if place == "" {
-		return "", ErrNoPlace
+		return Conditions{}, ErrNoPlace
 	}
 
-	obs, err := getObservations(place)
+	collection, err := fetch(ctx, place)
+	if err != nil {
+		return Conditions{}, err
+	}
+
+	obs, measuredAt, ok := extractLatestObservations(collection)
+	if !ok {
+		return Conditions{}, ErrNoObservations
+	}
+
+	return Conditions{Place: place, Time: measuredAt, Observations: obs}, nil
+}
+
+// Weather returns the latest observations of a place as a written
+// description. It is a convenience wrapper around Current, and safe to
+// call from multiple goroutines.
+func Weather(place string) (string, error) {
+	w, err := Current(context.Background(), place)
 	if err != nil {
 		return "", err
 	}
-
-	weather := formatObservations(place, obs)
-
-	return weather, nil
+	return w.String(), nil
 }
 
 func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {
@@ -179,11 +222,12 @@ func parseFeatureCollection(data []byte) (simpleFeatureCollection, error) {
 }
 
 // extractLatestObservations returns the most recent observation that has
-// at least one measure. FMI may return observations where every measure
-// is NaN and up to maxlocations stations, so the newest timestamp with a
-// populated station wins. Stations sharing a timestamp are tried in the
-// order FMI returned them, nearest to the place first.
-func extractLatestObservations(collection simpleFeatureCollection) (observations, bool) {
+// at least one measure, together with its timestamp. FMI may return
+// observations where every measure is NaN and up to maxlocations
+// stations, so the newest timestamp with a populated station wins.
+// Stations sharing a timestamp are tried in the order FMI returned them,
+// nearest to the place first.
+func extractLatestObservations(collection simpleFeatureCollection) (Observations, time.Time, bool) {
 	type stationTime struct {
 		time     time.Time
 		location string
@@ -210,11 +254,11 @@ func extractLatestObservations(collection simpleFeatureCollection) (observations
 
 	for _, key := range keys {
 		if hasValue(groups[key]) {
-			return newObservation(groups[key]), true
+			return newObservation(groups[key]), key.time, true
 		}
 	}
 
-	return observations{}, false
+	return Observations{}, time.Time{}, false
 }
 
 // apiURL is the endpoint of FMI's open data service. Tests override it
@@ -225,9 +269,9 @@ var apiURL = url.URL{
 	Path:   "/wfs",
 }
 
-// getObservations does a HTTP GET request against FMI's API to fetch data
-// for a place
-func getObservations(place string) (observations, error) {
+// fetch does a HTTP GET request against FMI's API and parses the
+// response for a place
+func fetch(ctx context.Context, place string) (simpleFeatureCollection, error) {
 	/*  Parameters:
 	name		label				measure
 	t2m			Air Temperature		degC
@@ -280,45 +324,40 @@ func getObservations(place string) (observations, error) {
 	endpoint := apiURL
 	endpoint.RawQuery = q.Encode()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return observations{}, err
+		return simpleFeatureCollection{}, err
 	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return observations{}, fmt.Errorf("%w: %w", ErrFetchFailed, err)
+		return simpleFeatureCollection{}, fmt.Errorf("%w: %w", ErrFetchFailed, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return observations{}, fmt.Errorf("virhe luettaessa havaintoja: %w", err)
+		return simpleFeatureCollection{}, fmt.Errorf("virhe luettaessa havaintoja: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		// FMI replies 400 with OperationParsingFailed when the place
 		// cannot be parsed
 		if resp.StatusCode == http.StatusBadRequest {
-			return observations{}, ErrUnknownPlace
+			return simpleFeatureCollection{}, ErrUnknownPlace
 		}
-		return observations{}, fmt.Errorf("%w (HTTP %d)", ErrFetchFailed, resp.StatusCode)
+		return simpleFeatureCollection{}, fmt.Errorf("%w (HTTP %d)", ErrFetchFailed, resp.StatusCode)
 	}
 
 	collection, err := parseFeatureCollection(body)
 	if err != nil {
-		return observations{}, err
+		return simpleFeatureCollection{}, err
 	}
 	if collection.Matched == 0 || collection.Returned == 0 {
-		return observations{}, ErrNoObservations
+		return simpleFeatureCollection{}, ErrNoObservations
 	}
 
-	latestObs, found := extractLatestObservations(collection)
-	if !found {
-		return observations{}, ErrNoObservations
-	}
-
-	return latestObs, nil
+	return collection, nil
 }

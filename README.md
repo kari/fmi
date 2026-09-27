@@ -29,6 +29,21 @@ func main() {
 
 Kirjasto palauttaa virheet `fmi.ErrNoPlace`, `fmi.ErrFetchFailed`, `fmi.ErrUnknownPlace` ja `fmi.ErrNoObservations`, jotka voi tunnistaa `errors.Is`:llä.
 
+## Rakenteinen tulos
+
+`Current` palauttaa havainnot rakenteisena, jolloin arvot saa suoraan ilman tekstin jäsentämistä:
+
+```go
+w, err := fmi.Current(context.Background(), "Turku")
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(w)                           // sama kuvaus kuin Weatherilla
+fmt.Println(w.Observations.Temperature)  // lämpötila numerona
+```
+
+`Weather`-rakenteen `String()` tuottaa saman kuvauksen kuin `fmi.Weather`, ja `NaN`-arvo tarkoittaa, että mita puuttuu.
+
 Katso examples/ -kansiosta lisää esimerkkejä.
 
 Huom. FMI:n rajapinta tunnistaa jotkin paikat vain ruotsinkielisellä nimellä (esim. Tammisaari löytyy vain nimellä Ekenäs, ks. [issue #2](https://github.com/kari/fmi/issues/2)).

@@ -1,6 +1,7 @@
 package fmi
 
 import (
+	"context"
 	"math"
 	"strings"
 	"testing"
@@ -35,6 +36,14 @@ func TestWeather(t *testing.T) {
 	if err != nil || !strings.Contains(s5, "Pihtipudas") {
 		t.Errorf("Weather('Pihtipudas') should contain 'Pihtipudas', instead got '%s'", s5)
 	}
+
+	w, err := Current(context.Background(), "Helsinki")
+	if err != nil || w.Place != "Helsinki" || w.Time.IsZero() {
+		t.Errorf("Current('Helsinki') should return the place and a timestamp, instead got %+v, %v", w, err)
+	}
+	if s := w.String(); !strings.Contains(s, "Helsinki") {
+		t.Errorf("Current('Helsinki').String() should contain 'Helsinki', instead got '%s'", s)
+	}
 }
 
 func TestExtractLatestObservations(t *testing.T) {
@@ -62,7 +71,8 @@ func TestExtractLatestObservations(t *testing.T) {
 	var tests = []struct {
 		name      string
 		elements  []measure
-		want      observations
+		want      Observations
+		wantTime  time.Time
 		wantFound bool
 	}{
 		{
@@ -72,6 +82,7 @@ func TestExtractLatestObservations(t *testing.T) {
 				{Time: newer, Location: helsinki, Parameter: paramTemperature, Value: 10},
 			},
 			want:      newestTemp,
+			wantTime:  newer,
 			wantFound: true,
 		},
 		{
@@ -81,6 +92,7 @@ func TestExtractLatestObservations(t *testing.T) {
 				{Time: newer, Location: helsinki, Parameter: paramTemperature, Value: math.NaN()},
 			},
 			want:      olderTemp,
+			wantTime:  older,
 			wantFound: true,
 		},
 		{
@@ -90,6 +102,7 @@ func TestExtractLatestObservations(t *testing.T) {
 				{Time: newer, Location: vantaa, Parameter: paramTemperature, Value: 7},
 			},
 			want:      vantaaTemp,
+			wantTime:  newer,
 			wantFound: true,
 		},
 		{
@@ -99,6 +112,7 @@ func TestExtractLatestObservations(t *testing.T) {
 				{Time: newer, Location: helsinki, Parameter: paramTemperature, Value: 5},
 			},
 			want:      vantaaTemp,
+			wantTime:  newer,
 			wantFound: true,
 		},
 		{
@@ -110,6 +124,7 @@ func TestExtractLatestObservations(t *testing.T) {
 				{Time: newer, Location: helsinki, Parameter: "p_sea", Value: 1005.5},
 			},
 			want:      windAndCloud,
+			wantTime:  newer,
 			wantFound: true,
 		},
 		{
@@ -129,9 +144,12 @@ func TestExtractLatestObservations(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, found := extractLatestObservations(simpleFeatureCollection{Elements: test.elements})
+			got, measuredAt, found := extractLatestObservations(simpleFeatureCollection{Elements: test.elements})
 			if found != test.wantFound {
 				t.Fatalf("found = %t, want %t", found, test.wantFound)
+			}
+			if found && !measuredAt.Equal(test.wantTime) {
+				t.Errorf("measuredAt = %v, want %v", measuredAt, test.wantTime)
 			}
 			if !cmp.Equal(got, test.want, cmpopts.EquateNaNs()) {
 				t.Errorf("observation mismatch (-got +want):\n%s", cmp.Diff(got, test.want, cmpopts.EquateNaNs()))

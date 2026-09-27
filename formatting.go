@@ -5,12 +5,9 @@ import (
 	"io"
 	"math"
 	"strings"
-
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
-func formatTemperature(output io.Writer, o observations) {
+func formatTemperature(output io.Writer, o Observations) {
 	temp := o.Temperature
 	if math.IsNaN(temp) {
 		fmt.Fprint(output, "lämpötilatiedot puuttuvat")
@@ -45,13 +42,13 @@ func formatTemperature(output io.Writer, o observations) {
 	}
 }
 
-func formatCloudCover(output io.Writer, o observations) {
+func formatCloudCover(output io.Writer, o Observations) {
 	if cover, ok := cloudCover(o.CloudCover); ok {
 		fmt.Fprintf(output, ", %s", cover)
 	}
 }
 
-func formatWindSpeed(output io.Writer, o observations) {
+func formatWindSpeed(output io.Writer, o Observations) {
 	ws := o.WindSpeed
 	if math.IsNaN(ws) {
 		return
@@ -62,13 +59,13 @@ func formatWindSpeed(output io.Writer, o observations) {
 	}
 }
 
-func formatHumidity(output io.Writer, o observations) {
+func formatHumidity(output io.Writer, o Observations) {
 	if rh := o.Humidity; !math.IsNaN(rh) {
 		fmt.Fprintf(output, ", ilmankosteus %.f%%", rh)
 	}
 }
 
-func formatRain(output io.Writer, o observations) {
+func formatRain(output io.Writer, o Observations) {
 	if r := o.Precipitation; !math.IsNaN(r) && r >= 0 {
 		fmt.Fprintf(output, ", sateen määrä %.1f mm", r)
 		if ri := o.RainIntensity; !math.IsNaN(ri) {
@@ -77,28 +74,10 @@ func formatRain(output io.Writer, o observations) {
 	}
 }
 
-func formatSnow(output io.Writer, o observations) {
+func formatSnow(output io.Writer, o Observations) {
 	if snow := o.SnowDepth; !math.IsNaN(snow) && snow >= 0 {
 		fmt.Fprintf(output, ", lumen syvyys %.f cm", snow)
 	}
-}
-
-// formatObservations returns a string representation of weather observations
-// at a place
-func formatObservations(place string, o observations) string {
-	var output strings.Builder
-
-	c := cases.Title(language.Finnish)
-
-	fmt.Fprintf(&output, "Viimeisimmät säähavainnot paikassa %s: ", c.String(strings.ToLower(place)))
-	formatTemperature(&output, o)
-	formatCloudCover(&output, o)
-	formatWindSpeed(&output, o)
-	formatHumidity(&output, o)
-	formatRain(&output, o)
-	formatSnow(&output, o)
-
-	return output.String()
 }
 
 // windSpeed takes wind speed s (m/s) and direction d (angle) and
