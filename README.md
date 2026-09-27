@@ -1,7 +1,6 @@
 # FMI
 
 [![Go](https://github.com/kari/fmi/actions/workflows/go.yml/badge.svg)](https://github.com/kari/fmi/actions/workflows/go.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kari/fmi)](https://goreportcard.com/report/github.com/kari/fmi)
 
 Tämä Go-kirjasto hakee Ilmatieteen laitoksen rajapintojen kautta viimeisimmät säähavainnot halutulle paikalle. Hyödyllinen esimerkiksi IRC-bottia varten.
 
@@ -31,6 +30,8 @@ func main() {
 Kirjasto palauttaa virheet `fmi.ErrNoPlace`, `fmi.ErrFetchFailed`, `fmi.ErrUnknownPlace` ja `fmi.ErrNoObservations`, jotka voi tunnistaa `errors.Is`:llä.
 
 Katso examples/ -kansiosta lisää esimerkkejä.
+
+Huom. FMI:n rajapinta tunnistaa jotkin paikat vain ruotsinkielisellä nimellä (esim. Tammisaari löytyy vain nimellä Ekenäs, ks. [issue #2](https://github.com/kari/fmi/issues/2)).
 
 ## Lähteet
 
